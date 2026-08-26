@@ -380,11 +380,20 @@ const commands = {
       console.log('builds its cards from your areas and entities, so there is no stored layout.');
       return;
     }
+    // A "sections" view holds sections that hold cards, and stacks nest cards
+    // inside cards. Counting the top level reports 1 for a full screen of
+    // controls, which reads as an empty dashboard.
+    const countCards = (cards = []) => cards.reduce(
+      (n, c) => n + 1 + countCards(c.cards) + countCards(c.card ? [c.card] : []), 0);
+    const viewCards = (v) =>
+      countCards(v.cards) + (v.sections ?? []).reduce((n, sec) => n + countCards(sec.cards), 0);
+
     const views = cfg.views ?? [];
     console.log(`${views.length} view${views.length === 1 ? '' : 's'}`);
     for (const v of views) {
-      const cards = (v.cards ?? v.sections ?? []).length;
-      console.log(`  ${pad(v.title ?? '(untitled)', 26)} path=${pad(v.path ?? '-', 22)} ${cards} card${cards === 1 ? '' : 's'}`);
+      const cards = viewCards(v);
+      const kind = v.type === 'sections' ? ` [${(v.sections ?? []).length} sections]` : '';
+      console.log(`  ${pad(v.title ?? '(untitled)', 26)} path=${pad(v.path ?? '-', 18)} ${cards} card${cards === 1 ? '' : 's'}${kind}`);
     }
   },
 

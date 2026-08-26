@@ -13,7 +13,9 @@ const cleanBaseUrl = (v) => String(v ?? '').trim().replace(/\/+$/, '');
 
 export function config() {
   return {
-    baseUrl: cleanBaseUrl(process.env.HA_BASE_URL),
+    // HA_EFFECTIVE_URL is the loopback end of the tailnet forwarder when
+    // Tailscale is up; start.sh exports it. Falls back to what was configured.
+    baseUrl: cleanBaseUrl(process.env.HA_EFFECTIVE_URL || process.env.HA_BASE_URL),
     token: String(process.env.HA_TOKEN ?? '').trim(),
     agentId: String(process.env.HA_AGENT_ID ?? '').trim(),
   };

@@ -139,7 +139,8 @@ workspace/
   PADS.md                         guest pad playbook
   bin/ha.mjs                      Home Assistant CLI (REST + WebSocket)
   bin/pads.mjs                    pads and links CLI
-  bin/proxy.mjs                   routes the CLIs over the tailnet
+  bin/proxy.mjs                   points the CLIs at the tailnet forwarder
+  bin/tsforward.mjs               TCP forwarder: loopback -> tailnet via SOCKS5
   data/                           pads.json, shares.json, state.json
   data/backups/                   automatic snapshots before every config write
   projects/speeddial/             the two servers
@@ -171,16 +172,27 @@ Backups are plain JSON and accumulate; prune the directory when it gets old.
 
 A sandboxed container has no `/dev/net/tun` and no `CAP_NET_ADMIN`, so a normal
 `tailscaled` cannot run. Instead it runs in **userspace networking** mode, which
-keeps the network stack in-process and exposes an outbound HTTP proxy. Node's
-`fetch` ignores `HTTP_PROXY` unless started with `--use-env-proxy`, so
-`start.sh` sets that for the servers, and `bin/proxy.mjs` re-execs the CLIs with
-it when a tailnet is active. `NO_PROXY` keeps loopback direct so `pads` can
-still reach the config server.
+keeps the network stack in-process and exposes a SOCKS5 server.
 
-MagicDNS names resolve on the Tailscale side of that proxy, so
+`start.sh` then runs `bin/tsforward.mjs`, a small TCP forwarder that makes Home
+Assistant reachable at `http://127.0.0.1:18123` by tunnelling each connection
+through that SOCKS5 server. Everything else just talks to loopback.
+
+Forwarding at the TCP layer is deliberate. The obvious alternative — setting
+`HTTP_PROXY` — needs a Node new enough to support `--use-env-proxy`, and a real
+deployment turned out to run one without it (`node: bad option:
+--use-env-proxy`), which broke every command rather than degrading. A TCP
+forwarder asks nothing of Node: no flags, no version floor, and it behaves
+identically for `fetch`, WebSocket and `curl`.
+
+MagicDNS names are resolved on the Tailscale side of the tunnel, so
 `http://homeassistant.your-tailnet.ts.net:8123` works with no DNS setup in the
-container. The WebSocket API tunnels through the same proxy, so helpers, areas
-and devices keep working.
+container.
+
+Use `http`, not `https`, for a tailnet `HA_BASE_URL`. Forwarding presents the
+certificate against `127.0.0.1` and validation fails; WireGuard already
+encrypts the link, so plain HTTP over a tailnet is not a downgrade. `start.sh`
+warns and skips forwarding if it sees `https`.
 
 `ha doctor` reports which path is in use, so you never have to guess whether
 you're on the tailnet or a public URL.

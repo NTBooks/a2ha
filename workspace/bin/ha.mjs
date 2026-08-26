@@ -12,12 +12,11 @@
 //
 // Run `ha` with no arguments for the command list.
 
-import { applyProxy, proxyInUse } from './proxy.mjs';
+import { haBaseUrl, proxyInUse } from './proxy.mjs';
 
-// Must happen before the first fetch. May re-exec this process; see proxy.mjs.
-applyProxy();
-
-const BASE = String(process.env.HA_BASE_URL ?? '').trim().replace(/\/+$/, '');
+// Resolves to the tailnet forwarder's loopback address when Tailscale is up,
+// otherwise to HA_BASE_URL as configured. See proxy.mjs.
+const BASE = haBaseUrl();
 const TOKEN = String(process.env.HA_TOKEN ?? '').trim();
 
 if (!BASE || !TOKEN) {
@@ -190,8 +189,9 @@ const commands = {
     // Worth reporting either way: knowing HA is reached over the tailnet
     // rather than a public URL is the difference between two very different
     // security postures, and it is not obvious from anything else here.
-    checks.push(['network path', 'ok',
-      proxyInUse() ? `tailnet (${process.env.HTTP_PROXY})` : 'direct to HA_BASE_URL']);
+    checks.push(['network path', 'ok', proxyInUse()
+      ? `tailnet (${process.env.HA_BASE_URL} via ${BASE})`
+      : `direct to ${BASE}`]);
 
     const width = Math.max(...checks.map((c) => c[0].length));
     for (const [name, status, detail] of checks) {

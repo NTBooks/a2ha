@@ -67,39 +67,47 @@ start_tailscale() {
 mkdir -p "${TS_STATE_DIR:-/tmp/tailscale}"
 
 if start_tailscale; then
-  # Route outbound HTTP through the tailnet. NO_PROXY keeps loopback direct so
-  # the CLIs can still reach the config server on 127.0.0.1.
-  export HTTP_PROXY="http://localhost:$PROXY_PORT"
-  export HTTPS_PROXY="http://localhost:$PROXY_PORT"
-  export NO_PROXY="localhost,127.0.0.1,::1"
-  export TS_PROXY_URL="$HTTP_PROXY"
-  # Node's fetch ignores HTTP_PROXY unless asked. The flag must be passed as a
-  # real argument: some Node builds refuse it inside NODE_OPTIONS ("--use-env-proxy
-  # is not allowed in NODE_OPTIONS", exit 9), which would take the pad servers
-  # down along with the proxying.
-  if node --use-env-proxy -e '' 2>/dev/null; then
-    NODE_PROXY_FLAG="--use-env-proxy"
-    echo "[start] outbound HTTP routed through the tailnet"
-  else
-    NODE_PROXY_FLAG=""
-    echo "[start] WARNING: this Node does not support --use-env-proxy, so it"
-    echo "[start] cannot reach Home Assistant over the tailnet. Point HA_BASE_URL"
-    echo "[start] at a directly reachable URL, or unset TS_AUTHKEY."
-  fi
+  # Make Home Assistant look like localhost by forwarding a loopback port
+  # through tailscaled's SOCKS5 server. This is done at the TCP layer on
+  # purpose: routing via HTTP_PROXY would require a Node new enough to support
+  # --use-env-proxy, and a real deployment turned out not to be ("node: bad
+  # option: --use-env-proxy"), which broke every command. A TCP forwarder needs
+  # nothing from Node, and works the same for fetch, WebSocket and curl.
+  HA_URL="${HA_BASE_URL:-}"
+  HA_SCHEME="${HA_URL%%://*}"
+  HA_HOSTPORT="${HA_URL#*://}"
+  HA_HOSTPORT="${HA_HOSTPORT%%/*}"
+  HA_HOST="${HA_HOSTPORT%%:*}"
+  HA_PORT="${HA_HOSTPORT##*:}"
+  [ "$HA_PORT" = "$HA_HOST" ] && HA_PORT=8123
 
-  # Leave a marker so `ha` and `pads` pick the proxy up in the agent's own
-  # shells, which do not inherit this script's environment.
-  cat > "$WORKSPACE/.tailscale-env" <<EOF
-HTTP_PROXY=$HTTP_PROXY
-HTTPS_PROXY=$HTTPS_PROXY
-NO_PROXY=$NO_PROXY
+  if [ "$HA_SCHEME" = "https" ]; then
+    # Forwarding would present the certificate against 127.0.0.1 and fail
+    # validation. On a tailnet plain http is already encrypted by WireGuard.
+    echo "[start] WARNING: HA_BASE_URL is https, which cannot be forwarded over"
+    echo "[start] the tailnet without breaking certificate validation. Use"
+    echo "[start] http://$HA_HOST:$HA_PORT instead - the tailnet encrypts it."
+    rm -f "$WORKSPACE/.tailscale-env"
+  elif [ -z "$HA_HOST" ]; then
+    echo "[start] HA_BASE_URL is not set, so there is nothing to forward."
+    rm -f "$WORKSPACE/.tailscale-env"
+  else
+    LOCAL_PORT="${HA_LOCAL_PORT:-18123}"
+    echo "[start] forwarding 127.0.0.1:$LOCAL_PORT -> $HA_HOST:$HA_PORT over the tailnet"
+    node "$WORKSPACE/bin/tsforward.mjs" "$LOCAL_PORT" "$HA_HOST" "$HA_PORT" "$((PROXY_PORT + 1))"       >/tmp/tsforward.log 2>&1 &
+    sleep 1
+    export HA_EFFECTIVE_URL="http://127.0.0.1:$LOCAL_PORT"
+
+    # The agent's own shells do not inherit this, so leave it on disk for the
+    # CLIs to pick up.
+    cat > "$WORKSPACE/.tailscale-env" <<EOF
+HA_EFFECTIVE_URL=$HA_EFFECTIVE_URL
 EOF
+  fi
 else
-  NODE_PROXY_FLAG=""
   rm -f "$WORKSPACE/.tailscale-env"
 fi
 
 echo "[start] starting pad servers"
 cd "$WORKSPACE/projects/speeddial"
-# shellcheck disable=SC2086 -- deliberately unquoted so an empty flag vanishes.
-exec node $NODE_PROXY_FLAG src/index.js
+exec node src/index.js

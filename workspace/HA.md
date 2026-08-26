@@ -151,6 +151,11 @@ which of these applies.
    check the route is approved in the Tailscale admin console.
 3. `TS_AUTHKEY` was added after the last build, so Tailscale was never
    installed. Redeploy to run `setup.sh` again.
+4. The forwarder died — `cat /tmp/tsforward.log`. Home Assistant is reached at
+   `http://127.0.0.1:18123`, tunnelled to the tailnet, so if that log is empty
+   or full of SOCKS errors nothing else will work.
+5. `HA_BASE_URL` is `https`. It cannot be forwarded without breaking
+   certificate validation; use `http` — the tailnet already encrypts it.
 
 **On a public URL:**
 

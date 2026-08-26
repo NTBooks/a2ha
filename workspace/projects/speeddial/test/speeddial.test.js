@@ -241,6 +241,69 @@ describe('slot validation', () => {
   });
 });
 
+describe('live state', () => {
+  test('a service slot reports the entity\'s real state, an assist slot reports nothing', async () => {
+    await seedPad();
+    const pad = pads.getPad('guest');
+    const withEntity = pad.slots.find((x) => x.slot === 1);
+    const withoutEntity = pad.slots.find((x) => x.slot === 2);
+    assert.equal(pads.slotEntity(withEntity), 'light.porch');
+    assert.equal(pads.slotEntity(withoutEntity), null);
+  });
+
+  test('states we should not interpret become null rather than a guess', () => {
+    assert.equal(pads.liveIsOn('on'), true);
+    assert.equal(pads.liveIsOn('off'), false);
+    // The point of reading back is honesty; an entity that cannot answer must
+    // not be rendered as "off", which is what a boolean cast would do.
+    assert.equal(pads.liveIsOn('unavailable'), null);
+    assert.equal(pads.liveIsOn('unknown'), null);
+    assert.equal(pads.liveIsOn(null), null);
+  });
+
+  test('reading state does not touch the house beyond the entities on the pad', async () => {
+    await seedPad();
+    const pad = pads.getPad('guest');
+    const entities = pad.slots.map(pads.slotEntity).filter(Boolean);
+    await ha.statesOf(entities);
+    // One request per distinct entity, and nothing resembling a full dump.
+    assert.equal(sent.length, entities.length);
+    for (const req of sent) {
+      assert.ok(req.url.includes('/api/states/'), `unexpected call: ${req.url}`);
+      assert.equal(req.url.endsWith('/api/states'), false, 'read the whole state machine');
+    }
+  });
+
+  test('a dead entity does not take the rest of the pad down with it', async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('light.broken')) throw new Error('boom');
+      return { ok: true, status: 200, text: async () => JSON.stringify({ state: 'on' }) };
+    };
+    try {
+      const r = await ha.statesOf(['light.porch', 'light.broken']);
+      assert.equal(r['light.porch'], 'on');
+      assert.equal(r['light.broken'], null);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test('the guest view still carries no state at all', async () => {
+    await seedPad();
+    await pads.setOn('guest', 1, true);
+    const serialised = JSON.stringify(pads.guestView('guest'));
+    // State reaches the browser through a separate request, never the HTML, so
+    // a link preview or a crawler learns nothing about the house.
+    assert.equal(serialised.includes('true'), false);
+    assert.equal(serialised.includes('"on"'), false);
+    assert.deepEqual(pads.guestView('guest').slots, [
+      { slot: 1, name: 'Porch light' },
+      { slot: 2, name: 'Movie night' },
+    ]);
+  });
+});
+
 describe('firing', () => {
   test('a service button sends exactly the stored call', async () => {
     await seedPad();

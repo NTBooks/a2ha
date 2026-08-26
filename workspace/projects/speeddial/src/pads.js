@@ -28,6 +28,18 @@ export const slotName = (slot) => {
 // Everything a guest ever sees about a button.
 export const padSlotView = (slot) => ({ slot: slot.slot, name: slotName(slot) });
 
+// The entity a slot's state can be read from, if any. A slot that fires a
+// spoken phrase has no entity and no knowable state -- that is a real gap, not
+// something to paper over with a guess.
+export function slotEntity(slot) {
+  const a = slot?.on;
+  if (a?.type !== 'service') return null;
+  const id = a.target?.entity_id;
+  if (typeof id === 'string') return id;
+  if (Array.isArray(id) && typeof id[0] === 'string') return id[0];
+  return null;
+}
+
 export function getPad(name) {
   const n = norm(name);
   return (read('pads').pads || []).find((p) => p.name === n) || null;
@@ -181,6 +193,16 @@ export const toggleKey = (padName, slot) => `${norm(padName)}:${slot}`;
 
 export function isOn(padName, slot) {
   return !!(read('state').toggles || {})[toggleKey(padName, slot)];
+}
+
+// True/false from Home Assistant itself, or null when unknowable. Preferred
+// over isOn() at fire time: what we last sent drifts the moment anyone uses a
+// wall switch, and a toggle that has drifted sends the wrong half of the pair.
+export function liveIsOn(haState) {
+  if (haState == null) return null;
+  if (['on', 'open', 'playing', 'home', 'unlocked', 'heat', 'cool', 'auto'].includes(haState)) return true;
+  if (['off', 'closed', 'idle', 'paused', 'not_home', 'locked', 'standby'].includes(haState)) return false;
+  return null;  // unavailable, unknown, or a state we should not interpret
 }
 
 export function setOn(padName, slot, value) {

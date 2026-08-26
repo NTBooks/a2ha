@@ -18,8 +18,8 @@
 //     trusted, so revoking a link kills it on the guest's next tap.
 
 import { resolve } from './shares.js';
-import { guestView, getPad, isOn, setOn, isToggle } from './pads.js';
-import { runAction, configured } from './ha.js';
+import { guestView, getPad, isOn, setOn, isToggle, slotEntity, liveIsOn } from './pads.js';
+import { runAction, configured, statesOf } from './ha.js';
 import { json, send, readJson, notFound } from './http.js';
 
 const esc = (s) => String(s ?? '')
@@ -30,12 +30,15 @@ const esc = (s) => String(s ?? '')
 // and a token's blast radius is already bounded to its own pad.
 const WINDOW_MS = 60_000;
 const MAX_FIRES = 30;
+// Reads are cheap and happen on every page load plus twice per press, so they
+// get their own budget rather than eating the one that guards the house.
+const MAX_READS = 120;
 const hits = new Map();
 
-function throttled(token) {
+function throttled(token, limit = MAX_FIRES) {
   const now = Date.now();
   const list = (hits.get(token) || []).filter((t) => now - t < WINDOW_MS);
-  if (list.length >= MAX_FIRES) { hits.set(token, list); return true; }
+  if (list.length >= limit) { hits.set(token, list); return true; }
   list.push(now);
   hits.set(token, list);
   return false;
@@ -50,6 +53,35 @@ const sweep = setInterval(() => {
   }
 }, WINDOW_MS);
 sweep.unref?.();
+
+// Reading state is a separate, explicit request -- never part of the page. The
+// HTML a link preview or crawler fetches therefore still carries nothing but
+// digits and labels; state exists only for someone who ran the script.
+//
+// Cached briefly so several guests opening the same link at once produce one
+// round trip to the house rather than one each.
+const STATE_TTL_MS = 3000;
+const stateCache = new Map();
+
+async function padStates(padName) {
+  const hit = stateCache.get(padName);
+  if (hit && Date.now() - hit.at < STATE_TTL_MS) return hit.value;
+
+  const pad = getPad(padName);
+  const slots = (pad?.slots ?? []).filter((s) => s.on);
+  const byEntity = await statesOf(slots.map(slotEntity));
+
+  const value = {};
+  for (const slot of slots) {
+    const entity = slotEntity(slot);
+    // null means 'no opinion' -- an assist button, an unavailable entity, or a
+    // state we decline to interpret. The page then shows nothing rather than
+    // guessing, which is the whole reason this is worth doing.
+    value[slot.slot] = entity ? liveIsOn(byEntity[entity]) : null;
+  }
+  stateCache.set(padName, { at: Date.now(), value });
+  return value;
+}
 
 function noStore(res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -95,7 +127,20 @@ const STYLE = `
     border-radius:9px; background:var(--bg); border:1px solid var(--line);
     font-weight:650; font-variant-numeric:tabular-nums; color:var(--muted);
   }
-  .lbl { font-weight:550; }
+  .lbl { font-weight:550; flex:1; }
+  .dot {
+    flex:0 0 auto; width:.6rem; height:.6rem; border-radius:50%;
+    background:var(--line); transition:background .25s ease, box-shadow .25s ease;
+  }
+  .dot.on { background:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .dot.off { background:var(--line); }
+  .dot.unknown { background:transparent; }
+  .key.loading .dot {
+    background:transparent; border:2px solid var(--line); border-top-color:var(--muted);
+    width:.85rem; height:.85rem; animation:spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .key.loading .dot { animation:none; } }
   .fill {
     position:absolute; inset:0; z-index:-1; transform-origin:left center;
     transform:scaleX(0); background:var(--accent); opacity:.16;
@@ -145,7 +190,9 @@ const noticePage = (title, body) => shell(title, `
 // domain mounted at "/".
 const CLIENT_JS = `
   (function () {
-    var fireUrl = location.pathname.replace(/\\/+$/, '') + '/fire';
+    var base = location.pathname.replace(/\\/+$/, '');
+    var fireUrl = base + '/fire';
+    var stateUrl = base + '/state';
     var say = document.getElementById('say'), t;
     function toast(msg, bad) {
       say.textContent = msg;
@@ -153,6 +200,24 @@ const CLIENT_JS = `
       clearTimeout(t);
       t = setTimeout(function () { say.className = ''; }, 4200);
     }
+    // The page renders instantly with no state, then fills it in. A slow or
+    // unreachable house delays the dots, never the buttons.
+    function paint(states) {
+      document.querySelectorAll('.key').forEach(function (btn) {
+        var v = states ? states[btn.getAttribute('data-slot')] : undefined;
+        btn.classList.remove('loading');
+        var dot = btn.querySelector('.dot');
+        dot.className = 'dot ' + (v === true ? 'on' : v === false ? 'off' : 'unknown');
+      });
+    }
+    function refresh() {
+      return fetch(stateUrl, { headers: { accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { paint(d && d.states); })
+        .catch(function () { paint(null); });
+    }
+    refresh();
+    
     document.querySelectorAll('.key').forEach(function (btn) {
       btn.addEventListener('click', function () {
         // The wash animation IS the cooldown: it runs for the same ~2s that
@@ -168,6 +233,10 @@ const CLIENT_JS = `
           return r.json().catch(function () { return {}; }).then(function (d) {
             if (!r.ok || !d.ok) toast(d.error || "That didn't go through - try again.", true);
             else toast(d.speech && d.speech !== 'Done.' ? d.speech : 'Done.');
+            // Devices take a beat to report back, so read twice rather than
+            // showing a dot that is confidently one press behind.
+            setTimeout(refresh, 900);
+            setTimeout(refresh, 2600);
           });
         }).catch(function () {
           toast("Couldn't reach the house - check your connection.", true);
@@ -213,8 +282,8 @@ export function page(req, res, token) {
   const body = !slots.length
     ? '<p class="empty">There are no buttons on this remote yet. Ask whoever shared it to set some up.</p>'
     : `<div class="pad">${slots.map((s) => `
-        <button class="key" data-slot="${s.slot}"${live ? '' : ' disabled'}>
-          <span class="fill"></span><span class="num">${s.slot}</span><span class="lbl">${esc(s.name)}</span>
+        <button class="key${live ? ' loading' : ''}" data-slot="${s.slot}"${live ? '' : ' disabled'}>
+          <span class="fill"></span><span class="num">${s.slot}</span><span class="lbl">${esc(s.name)}</span><span class="dot"></span>
         </button>`).join('')}</div>`;
 
   const inner = `
@@ -229,6 +298,20 @@ export function page(req, res, token) {
   <script>${CLIENT_JS}</script>`;
 
   return send(res, 200, 'text/html; charset=utf-8', shell(view.title, inner, twoUp));
+}
+
+export async function readState(req, res, token) {
+  noStore(res);
+  const share = resolve(token);
+  if (!share) return json(res, 403, { error: 'This link is no longer active.' });
+  if (throttled(token, MAX_READS)) return json(res, 429, { error: 'Too fast.' });
+  if (!configured()) return json(res, 200, { states: {} });
+  try {
+    return json(res, 200, { states: await padStates(share.pad) });
+  } catch {
+    // A pad whose state cannot be read is still a working pad.
+    return json(res, 200, { states: {} });
+  }
 }
 
 export async function fire(req, res, token) {
@@ -253,12 +336,23 @@ export async function fire(req, res, token) {
 
   // A plain button is always an "on" press. A toggle alternates, driven by what
   // we last sent -- never by reading HA back.
+  // A plain button is always an 'on' press. For a toggle, ask the house what is
+  // actually true before choosing a half -- what we last sent goes stale the
+  // moment somebody uses a wall switch, and Fanad could only ever guess here.
   const toggle = isToggle(slot);
-  const turningOn = toggle ? !isOn(share.pad, slotNo) : true;
+  let turningOn = true;
+  if (toggle) {
+    let live = null;
+    try {
+      if (slotEntity(slot)) live = (await padStates(share.pad))[slotNo];
+    } catch { live = null; }
+    turningOn = live === null ? !isOn(share.pad, slotNo) : !live;
+  }
 
   const r = await runAction(turningOn ? slot.on : slot.off);
   if (!r.ok) return json(res, 502, { error: r.text || "The house didn't answer." });
   if (toggle) await setOn(share.pad, slotNo, turningOn);
+  stateCache.delete(share.pad);
 
   return json(res, 200, { ok: true, speech: r.speech, slot: slotNo });
 }
@@ -269,10 +363,14 @@ export function handler(req, res) {
   // docs say the prefix is stripped; a real deployment showed it is not, and
   // the manifest's own note about setting Vite's base hints the same. Tolerate
   // both rather than betting on either.
-  const m = /(?:^|\/)r\/([^/]+?)(\/fire)?\/?$/.exec(url.pathname);
+  const m = /(?:^|\/)r\/([^/]+?)(\/fire|\/state)?\/?$/.exec(url.pathname);
   if (!m) return notFound(res);
 
   const token = decodeURIComponent(m[1]);
+  if (m[2] && m[2].endsWith('state')) {
+    if (req.method !== 'GET') return json(res, 405, { error: 'Use GET.' });
+    return readState(req, res, token);
+  }
   if (m[2]) {
     if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });
     return fire(req, res, token);

@@ -52,6 +52,22 @@ export async function haFetch(path, { method = 'GET', body, timeout = TIMEOUT.se
 export const states = () => haFetch('/api/states');
 export const state = (entityId) => haFetch(`/api/states/${encodeURIComponent(entityId)}`);
 export const serviceCatalog = () => haFetch('/api/services');
+
+// Read specific entities rather than /api/states -- a real house is hundreds of
+// kilobytes and a pad needs at most nine. Failures come back as null so one
+// dead entity cannot take the whole pad's state with it.
+export async function statesOf(entityIds) {
+  const unique = [...new Set(entityIds.filter(Boolean))];
+  const results = await Promise.all(unique.map(async (id) => {
+    try {
+      const r = await state(id);
+      return [id, r?.state ?? null];
+    } catch {
+      return [id, null];
+    }
+  }));
+  return Object.fromEntries(results);
+}
 export const errorLog = () => haFetch('/api/error_log');
 
 export const renderTemplate = (template) =>

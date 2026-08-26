@@ -52,8 +52,15 @@ the number selects from actions *you* defined, and that is the entire protocol.
 
 The page they load contains the button numbers and the labels you wrote. That's
 it. No entity IDs, no service names, no other pads, no way to enumerate
-anything, and — deliberately — no on/off state, because the agent doesn't read
-your house back and a stale "ON" badge is worse than no badge at all.
+anything.
+
+Once the page is open it asks — in a second, separate request — what those
+buttons currently are, and a small dot lights next to each. So a guest can see
+the porch light is already on instead of pressing it and wondering. The HTML
+itself stays state-free, which means a link preview or a crawler still learns
+nothing; state only exists for someone who actually opened the page. A button
+whose state can't be known — a spoken-phrase button, or an unavailable device —
+shows no dot rather than a confident wrong one.
 
 Some smaller decisions that matter more than they look:
 
@@ -272,7 +279,7 @@ network you trust — it sits outside Home Assistant's own login.
 cd workspace/projects/speeddial && npm test
 ```
 
-26 tests, fully offline. They pin the things that make a share link safe to text
+31 tests, fully offline. They pin the things that make a share link safe to text
 to someone: hash-only token storage, expiry and revocation, exactly what the
 guest view may contain, and the fact that an unrecognised action never reaches
 Home Assistant.
@@ -287,9 +294,11 @@ A pad link is a URL with no identity behind it, and URLs get forwarded.
 **A "never expires" link is a real commitment.** Fine for a housemate, bad for a
 weekend visitor. Revocation is immediate, but you have to remember to do it.
 
-**Toggle state is a guess.** The agent records what it last *sent*; it never
-reads Home Assistant back to check. That's why no on/off state is ever shown to
-anyone.
+**Toggles read the house, not their own memory.** When a guest taps a toggle,
+the agent asks Home Assistant what's actually true and sends the opposite. That
+matters because someone always uses the wall switch: a pad that only remembered
+what it last sent would send "on" to a light that's already on, and the guest
+would tap a button that appears to do nothing.
 
 **The build downloads Tailscale** (~30MB from `pkgs.tailscale.com`) if you use
 that path.

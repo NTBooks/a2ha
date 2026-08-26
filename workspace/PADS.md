@@ -29,7 +29,9 @@ pads clear <pad> <1-9>
 ```
 
 **`--entity` is the one to reach for.** It resolves to a real service call
-stored on the button, which fires the same way every time.
+stored on the button, which fires the same way every time — and because the
+button names an entity, the pad can show its state and a toggle can read the
+house before choosing which half to send. `--say` buttons can do neither.
 
 For lights, switches, fans, media players, climate, humidifiers and input
 booleans it makes a genuine on/off toggle. For anything else — scenes, scripts,
@@ -65,8 +67,12 @@ This is the part worth protecting. The guest page contains **the button numbers
 and the labels you wrote, and nothing else**:
 
 - not the entity id, not the service, not the pad's internal name
-- not whether the light is currently on
 - not any other pad, and no way to reach one
+
+Once open, the page asks separately for the current state of its own buttons and
+shows a dot beside each. The HTML stays state-free, so a link preview still
+reveals nothing. A button with no readable state — a `--say` button, or an
+unavailable device — shows no dot rather than guessing.
 
 The page title is the pad's `--title`, so it *is* visible — "Guest room" is
 fine, "Back door code 4471" is not.

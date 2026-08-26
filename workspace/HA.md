@@ -131,7 +131,7 @@ Lovelace is WebSocket-only too:
 
 ```bash
 ha dashboards                    # every dashboard, with its url_path
-ha dashboard dashboard-office    # that one's views and cards
+ha dashboard <url_path>          # that one's views and cards
 ha dashboard                     # the default Overview
 ha resources                     # custom cards installed via HACS etc.
 ```

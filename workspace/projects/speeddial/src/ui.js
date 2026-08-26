@@ -104,9 +104,19 @@ export const UI = `<!doctype html>
 <div id="toast"></div>
 <script>
 (function () {
-  // The gateway strips the route prefix, so build the API base from where this
-  // page actually is rather than hardcoding "/api".
+  // Build the API base from where this page actually is, rather than hardcoding
+  // "/api" -- the route prefix may or may not survive the gateway.
+  //
+  // The gateway wants its token on every request, not just the one that loaded
+  // this page. It may set a cookie when you arrive with ?token=, but it may not,
+  // so carry it forward explicitly rather than finding out the hard way.
+  var GW = new URLSearchParams(location.search).get("token") || "";
   var API = location.pathname.replace(/\\/+$/, '') + '/api';
+  function apiUrl(path) {
+    var u = API + path;
+    if (!GW) return u;
+    return u + (u.indexOf("?") === -1 ? "?" : "&") + "token=" + encodeURIComponent(GW);
+  }
   var app = document.getElementById('app');
   var statusEl = document.getElementById('status');
   var entities = [];
@@ -121,7 +131,7 @@ export const UI = `<!doctype html>
   }
 
   function api(path, opts) {
-    return fetch(API + path, Object.assign({
+    return fetch(apiUrl(path), Object.assign({
       headers: { 'content-type': 'application/json' }
     }, opts || {})).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (d) {

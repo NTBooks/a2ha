@@ -113,6 +113,13 @@ admitting you could not look.
 use a name. A button wired to an entity that does not exist looks fine in the
 config app and fails silently in a guest's hand.
 
+**A dashboard you cannot see can be broken.** Home Assistant stores whatever
+card config you give it and only complains when a browser renders it, so a bad
+card type looks like a clean save and shows up as "Configuration error" on the
+screen. `ha cards` tells you which types are real here; `ha dashboard-save`
+refuses invented ones. After building a dashboard, read it back and consider
+asking the owner whether it looks right — you are working blind otherwise.
+
 **Test before you hand over a link.** `pads test <pad> <n>` fires the button for
 real. Do that, confirm the thing moved, *then* `pads share`.
 

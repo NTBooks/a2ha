@@ -490,6 +490,26 @@ const commands = {
     if (!config || typeof config !== 'object' || !Array.isArray(config.views)) {
       die('A dashboard config needs a "views" array, e.g. {"views":[{"title":"Home","cards":[]}]}');
     }
+    // Catch invented card types before they reach the screen. Home Assistant
+    // stores whatever you give it and only complains when it renders, so a bad
+    // type looks like a clean save and shows up as "Configuration error" on the
+    // dashboard -- somewhere the agent never looks.
+    const proposed = collectCardTypes(config);
+    const unknown = [...proposed.keys()].filter(
+      (t) => !BUILTIN_CARDS.has(t) && !t.startsWith('custom:'));
+    if (unknown.length) {
+      const inUse = await cardTypesInUse();
+      const reallyUnknown = unknown.filter((t) => !inUse.has(t));
+      if (reallyUnknown.length && !flags.force) {
+        die(`These card types are not Home Assistant cards and are not used anywhere ` +
+            `in this house:\n  ${reallyUnknown.join('\n  ')}\n\n` +
+            `There is no card named after an entity domain - an input_number goes in a ` +
+            `tile with a numeric-input feature, or an entities card.\n` +
+            `Run "ha cards" to see what this install actually renders. ` +
+            `Pass --force if you are certain.`);
+      }
+    }
+
     const saved = flags['no-backup'] ? null : await snapshotDashboard(urlPath, 'overwrite');
     await ws({ type: 'lovelace/config/save', url_path: urlPath, config });
     console.log('Saved ' + config.views.length + ' view' + (config.views.length === 1 ? '' : 's') + ' to ' + urlPath + '.');
@@ -745,6 +765,24 @@ const commands = {
     die('usage: ha helper <list|create|delete> ...');
   },
 
+  // What card types exist here. There is no API for "list valid cards", so the
+  // best available answer is what this install already renders successfully.
+  async cards() {
+    const counts = await cardTypesInUse();
+    if (!counts.size) return console.log('No dashboards with stored layouts yet.');
+    const rows = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const w = Math.max(...rows.map(([t]) => t.length));
+    for (const [type, n] of rows) {
+      const flag = type.startsWith('custom:') ? 'custom'
+        : BUILTIN_CARDS.has(type) ? ''
+        : 'NOT A KNOWN CARD TYPE';
+      console.log(`${String(n).padStart(3)}  ${pad(type, w)}  ${flag}`);
+    }
+    console.log('');
+    console.log('These are the types already rendering in this house. Prefer them.');
+    console.log('Anything flagged is either a custom card or a mistake someone saved.');
+  },
+
   async resources() {
     const list = await ws({ type: 'lovelace/resources' });
     if (flags.json) return out(list);
@@ -903,6 +941,50 @@ async function checkConfig() {
   return { valid: r?.result === 'valid', errors: r?.errors || null };
 }
 
+// Lovelace card types that Home Assistant ships. There is no API that lists
+// these -- cards are a frontend concern -- so this is a written-down list, and
+// it is deliberately treated as advisory rather than authoritative.
+const BUILTIN_CARDS = new Set([
+  'alarm-panel', 'area', 'button', 'calendar', 'clock', 'conditional', 'entities',
+  'entity', 'entity-filter', 'gauge', 'glance', 'grid', 'heading', 'history-graph',
+  'horizontal-stack', 'humidifier', 'iframe', 'light', 'logbook', 'map', 'markdown',
+  'media-control', 'picture', 'picture-elements', 'picture-entity', 'picture-glance',
+  'plant-status', 'sensor', 'shopping-list', 'statistic', 'statistics-graph',
+  'thermostat', 'tile', 'todo-list', 'vertical-stack', 'weather-forecast',
+  'energy-date-selection', 'energy-usage-graph', 'energy-distribution',
+]);
+
+// Walk every card on a config, including sections and nested stacks.
+function collectCardTypes(cfg, into = new Map()) {
+  const walk = (cards = []) => {
+    for (const c of cards) {
+      if (!c || typeof c !== 'object') continue;
+      if (c.type) into.set(c.type, (into.get(c.type) || 0) + 1);
+      walk(c.cards);
+      if (c.card) walk([c.card]);
+    }
+  };
+  for (const v of cfg?.views ?? []) {
+    walk(v.cards);
+    for (const s of v.sections ?? []) walk(s.cards);
+  }
+  return into;
+}
+
+// What this particular install actually uses. Custom cards from HACS only show
+// up here, which is why it beats any hardcoded list on its own.
+async function cardTypesInUse() {
+  const list = await ws({ type: 'lovelace/dashboards/list' });
+  const counts = new Map();
+  for (const d of [...list, { url_path: null }]) {
+    try {
+      const cfg = await ws({ type: 'lovelace/config', url_path: d.url_path });
+      collectCardTypes(cfg, counts);
+    } catch { /* strategy dashboards and empty ones have no stored config */ }
+  }
+  return counts;
+}
+
 async function configObject(kind) {
   const verb = args[0] || 'list';
   const id = args[1];
@@ -1020,6 +1102,7 @@ const USAGE = `ha -- Home Assistant control
   ha dashboard-save   <url-path> --body '<json>'
   ha dashboard-delete <url-path>
   ha dashboard-restore <url-path> [--file <path>]
+  ha cards                        card types this install actually renders
 
   ha file ls [path]               list /config
   ha file read <path>             read a file

@@ -217,9 +217,32 @@ A config is `{"views": [...]}`, each view holding `cards`:
 }
 ```
 
-Useful card types: `entities`, `button`, `light`, `thermostat`, `weather-forecast`,
-`markdown`, `picture-glance`, `grid`, `vertical-stack`, `horizontal-stack`.
-`ha resources` shows custom cards this install has, which are also fair game.
+**There is no card named after an entity domain.** This is the trap: there is no
+`input_number` card, no `input_boolean` card, no `sensor`-domain card. Writing
+one saves cleanly and then shows "Configuration error" on the dashboard — where
+you will never see it, because you are not the one looking at the screen.
+
+An adjustable number goes in a tile with a feature:
+
+```json
+{ "type": "tile", "entity": "input_number.timer_minutes", "name": "Minutes",
+  "features": [{ "type": "numeric-input", "style": "box" }] }
+```
+
+Or list several together in an `entities` card.
+
+Run **`ha cards`** before you invent one. It shows every card type this install
+already renders successfully, with counts — which is both the check that a type
+is real and a good hint at the house style. It also picks up custom cards from
+HACS, which no written list would know about.
+
+`ha dashboard-save` refuses a card type that is neither a Home Assistant card
+nor already in use here. If you hit that, you have invented something — look at
+`ha cards` rather than reaching for `--force`.
+
+Common built-ins: `tile`, `button`, `heading`, `entities`, `markdown`, `gauge`,
+`light`, `thermostat`, `weather-forecast`, `media-control`, `conditional`,
+`grid`, `vertical-stack`, `horizontal-stack`, `picture-glance`, `history-graph`.
 
 **`dashboard-save` replaces the whole config.** To change one view, read the
 current config with `ha dashboard <url_path> --json`, edit it, and save the

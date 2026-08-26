@@ -329,7 +329,7 @@ const commands = {
     } catch (err) {
       // HA answers an unknown url_path with "Unknown config specified".
       if (/unknown config|not found/i.test(err.message)) {
-        die(`No dashboard at "${args[0]}". Run: ha dashboards`);
+        throw new Error(`No dashboard at "${args[0]}". Run: ha dashboards`);
       }
       throw err;
     }
@@ -348,6 +348,51 @@ const commands = {
       const cards = (v.cards ?? v.sections ?? []).length;
       console.log(`  ${pad(v.title ?? '(untitled)', 26)} path=${pad(v.path ?? '-', 22)} ${cards} card${cards === 1 ? '' : 's'}`);
     }
+  },
+
+  async whoami() {
+    const me = await ws({ type: 'auth/current_user' });
+    console.log(`${me.name} (${me.id})`);
+    console.log(`admin: ${me.is_admin ? 'yes' : 'no'}   owner: ${me.is_owner ? 'yes' : 'no'}`);
+  },
+
+  // The default dashboard is per-user frontend state, and the WebSocket API
+  // applies it to whoever the connection authenticated as -- which is always
+  // this agent's own token-holder. There is no way to set it for someone else,
+  // so say whose it is every time rather than letting the owner assume it is
+  // theirs.
+  async homescreen() {
+    const me = await ws({ type: 'auth/current_user' });
+    const current = await ws({ type: 'frontend/get_user_data', key: 'core' });
+    const panel = current?.value?.defaultPanel ?? null;
+
+    if (!args[0] && !flags.clear) {
+      console.log(`${me.name}'s home screen: ${panel ?? 'the Home Assistant default (Overview)'}`);
+      console.log('');
+      console.log(`This is ${me.name}'s own setting. Home Assistant stores it per user, and`);
+      console.log('this agent can only read or change the account its token belongs to.');
+      console.log("Any other user's home screen has to be set by that user, in their own");
+      console.log('Home Assistant profile.');
+      return;
+    }
+
+    if (flags.clear) {
+      await ws({ type: 'frontend/set_user_data', key: 'core', value: null });
+      console.log(`${me.name}'s home screen reset to the Home Assistant default.`);
+      return;
+    }
+
+    // Refuse a dashboard that does not exist rather than storing a dead value.
+    const list = await ws({ type: 'lovelace/dashboards/list' });
+    const want = args[0];
+    if (want !== 'lovelace' && !list.some((d) => d.url_path === want)) {
+      throw new Error(`No dashboard with url_path "${want}". Run: ha dashboards`);
+    }
+
+    const value = { ...(current?.value ?? {}), defaultPanel: want };
+    await ws({ type: 'frontend/set_user_data', key: 'core', value });
+    console.log(`${me.name}'s home screen set to "${want}".`);
+    console.log(`Only affects ${me.name} - other users keep their own.`);
   },
 
   async resources() {
@@ -478,6 +523,9 @@ const USAGE = `ha -- Home Assistant control
   ha dashboards                   every Lovelace dashboard
   ha dashboard [url_path]         one dashboard's views and cards
   ha resources                    custom Lovelace resources
+  ha whoami                       which Home Assistant user this token is
+  ha homescreen [url_path]        default dashboard, for THIS token's user only
+                                  (--clear resets to the HA default)
 
   ha areas | ha devices | ha labels
   ha ws '<json command>'          raw websocket command
@@ -494,5 +542,7 @@ if (!commands[cmd]) { console.error(`Unknown command: ${cmd}\n`); console.log(US
 
 commands[cmd]().catch((err) => {
   console.error(err.message);
-  process.exit(1);
+  // exitCode rather than exit(): a hard exit from inside a websocket callback
+  // aborts before the socket finishes closing, which trips libuv on Windows.
+  process.exitCode = 1;
 });

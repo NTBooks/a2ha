@@ -12,6 +12,11 @@
 //
 // Run `ha` with no arguments for the command list.
 
+import { applyProxy, proxyInUse } from './proxy.mjs';
+
+// Must happen before the first fetch. May re-exec this process; see proxy.mjs.
+applyProxy();
+
 const BASE = String(process.env.HA_BASE_URL ?? '').trim().replace(/\/+$/, '');
 const TOKEN = String(process.env.HA_TOKEN ?? '').trim();
 
@@ -176,6 +181,12 @@ const commands = {
       const areas = await ws({ type: 'config/area_registry/list' });
       return `${areas.length} areas`;
     });
+
+    // Worth reporting either way: knowing HA is reached over the tailnet
+    // rather than a public URL is the difference between two very different
+    // security postures, and it is not obvious from anything else here.
+    checks.push(['network path', 'ok',
+      proxyInUse() ? `tailnet (${process.env.HTTP_PROXY})` : 'direct to HA_BASE_URL']);
 
     const width = Math.max(...checks.map((c) => c[0].length));
     for (const [name, status, detail] of checks) {

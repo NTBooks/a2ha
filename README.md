@@ -38,15 +38,37 @@ only involved when *you* talk to the agent.
 
 ## Setup
 
-### 1. Home Assistant has to be reachable from the internet
+### 1. Decide how the agent reaches Home Assistant
 
-The agent runs in Pinata's cloud, not on your LAN. Any of these work:
+The agent runs in Pinata's cloud, not on your LAN. Two ways to bridge that.
 
-- **Nabu Casa** — you already have a stable `https://xxx.ui.nabu.casa` URL.
-- **Cloudflare Tunnel** or **DuckDNS** — your own hostname.
-- Anything else that gives HA a public HTTPS URL.
+**Tailscale (recommended).** The agent joins your tailnet and Home Assistant
+never gets a public URL at all. Set `TS_AUTHKEY` and the agent brings up
+Tailscale on boot; `HA_BASE_URL` then points at a tailnet address.
 
-If you're behind a proxy or tunnel, set `trusted_proxies` in your HA
+Get Home Assistant onto your tailnet first, whichever fits:
+
+- *Home Assistant OS* — install the **Tailscale add-on** (Settings → Add-ons →
+  Add-on Store → Tailscale). HA gets its own node and MagicDNS name, so
+  `HA_BASE_URL=http://homeassistant.your-tailnet.ts.net:8123`. This is the
+  cleanest option: nothing else on your LAN becomes reachable.
+- *HA behind another Tailscale machine* (e.g. a Proxmox host running HA in a
+  VM) — make that machine a **subnet router**:
+  `tailscale up --advertise-routes=192.168.1.0/24`, then approve the route in
+  the [admin console](https://login.tailscale.com/admin/machines). The agent
+  runs with `--accept-routes`, so `HA_BASE_URL=http://192.168.1.50:8123` then
+  works. Note this exposes the whole advertised subnet to your tailnet, so
+  prefer the add-on if HA can run one.
+
+Generate the auth key at
+[Settings → Keys](https://login.tailscale.com/admin/settings/keys). Mark it
+**Reusable** and **Ephemeral** — the agent registers a throwaway node on each
+boot and Tailscale reaps the old one, so no node key ever has to be persisted
+into the workspace.
+
+**Public URL.** Nabu Casa, Cloudflare Tunnel, DuckDNS — anything giving HA a
+public HTTPS hostname. Leave `TS_AUTHKEY` blank and point `HA_BASE_URL` at it.
+If you go through a proxy or tunnel, set `trusted_proxies` in your HA
 `configuration.yaml` or every API call comes back 400.
 
 ### 2. Make a token
@@ -64,8 +86,10 @@ Point Pinata at this repo, then attach the secrets:
 
 | Secret | Required | What it is |
 |---|:--:|---|
-| `HA_BASE_URL` | yes | `https://ha.example.com` — no trailing slash |
+| `HA_BASE_URL` | yes | tailnet address or public URL — no trailing slash |
 | `HA_TOKEN` | yes | the long-lived token from step 2 |
+| `TS_AUTHKEY` | no | Tailscale auth key — reusable + ephemeral |
+| `TS_HOSTNAME` | no | what the agent is called in your tailnet (default `a2ha`) |
 | `HA_AGENT_ID` | no | a specific HA Assist agent, for `--say` buttons |
 | `PUBLIC_BASE_URL` | no | only if you point a custom domain at the `/pad` route |
 
@@ -108,11 +132,14 @@ nothing and there's no build step to rot.
 manifest.json                     deployment contract
 SOUL.md                           personality
 workspace/
+  setup.sh                        build: install Tailscale
+  start.sh                        boot: join tailnet, then serve
   AGENTS.md                       how the agent works
   HA.md                           Home Assistant playbook
   PADS.md                         guest pad playbook
   bin/ha.mjs                      Home Assistant CLI (REST + WebSocket)
   bin/pads.mjs                    pads and links CLI
+  bin/proxy.mjs                   routes the CLIs over the tailnet
   data/                           pads.json, shares.json, state.json
   data/backups/                   automatic snapshots before every config write
   projects/speeddial/             the two servers
@@ -139,6 +166,24 @@ restoring it removes the object again instead of resurrecting a version that
 never existed. Deleting a pad snapshots it too.
 
 Backups are plain JSON and accumulate; prune the directory when it gets old.
+
+### How the Tailscale path works
+
+A sandboxed container has no `/dev/net/tun` and no `CAP_NET_ADMIN`, so a normal
+`tailscaled` cannot run. Instead it runs in **userspace networking** mode, which
+keeps the network stack in-process and exposes an outbound HTTP proxy. Node's
+`fetch` ignores `HTTP_PROXY` unless started with `--use-env-proxy`, so
+`start.sh` sets that for the servers, and `bin/proxy.mjs` re-execs the CLIs with
+it when a tailnet is active. `NO_PROXY` keeps loopback direct so `pads` can
+still reach the config server.
+
+MagicDNS names resolve on the Tailscale side of that proxy, so
+`http://homeassistant.your-tailnet.ts.net:8123` works with no DNS setup in the
+container. The WebSocket API tunnels through the same proxy, so helpers, areas
+and devices keep working.
+
+`ha doctor` reports which path is in use, so you never have to guess whether
+you're on the tailnet or a public URL.
 
 ### Health check
 

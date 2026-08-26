@@ -138,9 +138,23 @@ something changes. If the owner asks "is the door still open", check again.
 
 ## When Home Assistant is unreachable
 
-`ha doctor` will say so. The usual causes, in order:
+`ha doctor` will say so, and its last line tells you which network path is in
+use — `tailnet (...)` or `direct to HA_BASE_URL`. Check that first; it decides
+which of these applies.
 
-1. The tunnel or DuckDNS hostname is down — everything fails, including `/api/`.
+**On the tailnet:**
+
+1. The agent is not on the tailnet — `cat /tmp/tailscaled.log`. Usually the auth
+   key expired, or was single-use and already spent. Keys must be **reusable**
+   and **ephemeral**.
+2. The agent is on the tailnet but HA is not. If HA sits behind a subnet router,
+   check the route is approved in the Tailscale admin console.
+3. `TS_AUTHKEY` was added after the last build, so Tailscale was never
+   installed. Redeploy to run `setup.sh` again.
+
+**On a public URL:**
+
+1. The tunnel or hostname is down — everything fails, including `/api/`.
 2. `HA_TOKEN` was revoked or belongs to a deleted user — 401 on everything.
 3. HA is behind a proxy that needs `trusted_proxies` set — 400 on everything.
 

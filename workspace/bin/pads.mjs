@@ -8,6 +8,12 @@
 //
 // Run `pads` with no arguments for the command list.
 
+import { applyProxy } from './proxy.mjs';
+
+// Loopback is in NO_PROXY so this does not route through the tailnet, but the
+// call still has to be made from a process that understands the setting.
+applyProxy();
+
 const PORT = process.env.ADMIN_PORT || 4322;
 const API = `http://127.0.0.1:${PORT}/api`;
 

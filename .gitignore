@@ -6,3 +6,7 @@ node_modules/
 *.tmp
 .DS_Store
 Thumbs.db
+
+# Tailscale binaries (installed at build time) and the runtime proxy marker
+.tailscale/
+.tailscale-env

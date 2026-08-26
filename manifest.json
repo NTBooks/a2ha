@@ -2,31 +2,45 @@
   "$schema": "https://agents.pinata.cloud/schemas/manifest.v1.json",
   "version": 1,
   "engine": "hermes",
-
   "agent": {
     "name": "A2HA",
     "description": "Assistant TO the Home Assistant. Runs your house from chat - reads state, calls services, writes automations and scripts - and hands guests a locked-down button pad through a link that expires when you say so. Guests get big buttons and nothing else: no entity names, no free text, no access to the rest of your house.",
     "vibe": "assistant TO the Home Assistant, thank you",
     "emoji": "🏠"
   },
-
   "template": {
     "slug": "a2ha",
     "category": "general",
-    "tags": ["home-assistant", "smart-home", "speed-dial", "guest-access", "automation", "hermes"],
+    "tags": [
+      "home-assistant",
+      "smart-home",
+      "speed-dial",
+      "guest-access",
+      "tailscale",
+      "hermes"
+    ],
     "authorName": "NTBooks"
   },
-
   "secrets": [
     {
       "name": "HA_BASE_URL",
-      "description": "Public https URL of your Home Assistant - Cloudflare Tunnel, DuckDNS, or Nabu Casa. No trailing slash. Example: https://ha.example.com",
+      "description": "How the agent reaches Home Assistant. With Tailscale this is a tailnet address, e.g. http://homeassistant.your-tailnet.ts.net:8123 or http://100.x.y.z:8123 - no public URL needed. Without Tailscale, a public https URL. No trailing slash.",
       "required": true
     },
     {
       "name": "HA_TOKEN",
       "description": "Home Assistant long-lived access token. In HA: profile (bottom left) -> Security -> Long-lived access tokens -> Create token. Use a dedicated admin user so you can revoke it independently.",
       "required": true
+    },
+    {
+      "name": "TS_AUTHKEY",
+      "description": "Optional but recommended. Tailscale auth key, so the agent joins your tailnet and Home Assistant never needs a public URL. Generate at https://login.tailscale.com/admin/settings/keys - mark it Reusable AND Ephemeral. Leave blank to reach HA over a public URL instead.",
+      "required": false
+    },
+    {
+      "name": "TS_HOSTNAME",
+      "description": "Optional. Name this agent shows up as in your Tailscale admin console. Defaults to a2ha.",
+      "required": false
     },
     {
       "name": "HA_AGENT_ID",
@@ -39,16 +53,21 @@
       "required": false
     }
   ],
-
   "scripts": {
-    "build": "cd workspace/projects/speeddial && npm ci --omit=dev",
-    "start": "cd workspace/projects/speeddial && node src/index.js"
+    "build": "bash workspace/setup.sh && cd workspace/projects/speeddial && npm ci --omit=dev",
+    "start": "bash workspace/start.sh"
   },
-
   "routes": [
-    { "port": 4321, "path": "/pad",   "protected": false },
-    { "port": 4322, "path": "/admin", "protected": true }
+    {
+      "port": 4321,
+      "path": "/pad",
+      "protected": false
+    },
+    {
+      "port": 4322,
+      "path": "/admin",
+      "protected": true
+    }
   ],
-
   "tasks": []
 }

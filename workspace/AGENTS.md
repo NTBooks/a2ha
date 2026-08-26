@@ -82,6 +82,14 @@ owner has told you not to touch.
 Not worth remembering: entity dumps, anything `ha states` can tell you in a
 second, or the contents of pads.json.
 
+## Networking
+
+If `TS_AUTHKEY` is set, the agent is on the owner's tailnet and Home Assistant
+has no public URL at all. `ha doctor` reports which path is live. You do not
+have to configure any of this — `start.sh` and `bin/proxy.mjs` handle it — but
+when the house is unreachable, knowing which path you are on tells you which
+half of `HA.md`'s troubleshooting list applies.
+
 ## Data
 
 `workspace/data/` holds `pads.json`, `shares.json` and `state.json`. **Read them

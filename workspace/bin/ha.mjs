@@ -55,7 +55,24 @@ import { dirname, join } from 'node:path';
 const BACKUP_DIR = process.env.BACKUP_DIR
   || join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'backups');
 
-const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+// Millisecond precision, because backups are selected by sorting these names
+// and second-resolution stamps collide during a burst of writes.
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
+
+// Two writes inside the same second would otherwise land on the same filename,
+// and the second would silently destroy the first backup. Suffix until free.
+function backupPath(base) {
+  mkdirSync(BACKUP_DIR, { recursive: true });
+  // Every name carries a padded counter, including the first. Mixing suffixed
+  // and unsuffixed names breaks the ordering these are selected by: '.' sorts
+  // after '-', so an unsuffixed file always looked newer than its own successor.
+  let n = 0;
+  let file;
+  do {
+    file = join(BACKUP_DIR, base + '-' + String(++n).padStart(3, '0') + '.json');
+  } while (existsSync(file));
+  return file;
+}
 
 async function snapshot(kind, id, reason) {
   let before = null;
@@ -73,8 +90,7 @@ async function snapshot(kind, id, reason) {
     }
   }
 
-  mkdirSync(BACKUP_DIR, { recursive: true });
-  const file = join(BACKUP_DIR, `${kind}.${id}.${stamp()}.json`);
+  const file = backupPath(`${kind}.${id}.${stamp()}`);
   writeFileSync(file, `${JSON.stringify({
     kind, id, reason, savedAt: new Date().toISOString(), existed, body: before,
   }, null, 2)}\n`, 'utf8');
@@ -286,7 +302,14 @@ const commands = {
       let note = '';
       try {
         const s = JSON.parse(readFileSync(join(BACKUP_DIR, f), 'utf8'));
-        note = `${s.reason}${s.existed ? '' : ' (did not exist)'}${s.body?.alias ? ` :: ${s.body.alias}` : ''}`;
+        if (s.kind === 'dashboard') {
+          // Dashboard snapshots carry meta/config, not the existed/body pair.
+          const views = s.config?.views?.length;
+          note = `${s.reason}${s.meta?.title ? ` :: ${s.meta.title}` : ''}` +
+            (views == null ? ' (no layout yet)' : ` (${views} view${views === 1 ? '' : 's'})`);
+        } else {
+          note = `${s.reason}${s.existed ? '' : ' (did not exist)'}${s.body?.alias ? ` :: ${s.body.alias}` : ''}`;
+        }
       } catch {}
       console.log(`${pad(f, 56)} ${note}`);
     }
@@ -328,6 +351,12 @@ const commands = {
       cfg = await ws({ type: 'lovelace/config', url_path: path });
     } catch (err) {
       // HA answers an unknown url_path with "Unknown config specified".
+      if (/no config found/i.test(err.message)) {
+        // The dashboard exists, it just has no layout yet.
+        console.log('That dashboard has no views yet.');
+        console.log("Add some with: ha dashboard-save " + (args[0] || '') + " --body '<json>'");
+        return;
+      }
       if (/unknown config|not found/i.test(err.message)) {
         throw new Error(`No dashboard at "${args[0]}". Run: ha dashboards`);
       }
@@ -395,6 +424,101 @@ const commands = {
     console.log(`Only affects ${me.name} - other users keep their own.`);
   },
 
+  // --- creating and editing dashboards -------------------------------------
+  // All of this is the WebSocket API; Lovelace has no REST surface. Verified
+  // against a live install: create / config.save / update / delete all work
+  // for a storage-mode dashboard.
+
+  async ['dashboard-create']() {
+    const urlPath = args[0];
+    if (!urlPath) die('usage: ha dashboard-create <url-path> --title "Kitchen" [--icon mdi:x] [--sidebar] [--admin]');
+    // HA requires a hyphen in url_path and rejects anything else outright.
+    if (!/^[a-z0-9]+(-[a-z0-9]+)+$/.test(urlPath)) {
+      die('url_path must be lowercase words joined by hyphens, e.g. "kitchen-panel" (got "' + urlPath + '")');
+    }
+    const made = await ws({
+      type: 'lovelace/dashboards/create',
+      url_path: urlPath,
+      title: flags.title || urlPath,
+      ...(flags.icon ? { icon: String(flags.icon) } : {}),
+      show_in_sidebar: !!flags.sidebar,
+      require_admin: !!flags.admin,
+    });
+    console.log('Created "' + made.title + '" at ' + made.url_path + ' (id ' + made.id + ').');
+    console.log('It has no views yet - add some with: ha dashboard-save ' + made.url_path + " --body '<json>'");
+  },
+
+  async ['dashboard-update']() {
+    const urlPath = args[0];
+    if (!urlPath) die('usage: ha dashboard-update <url-path> [--title X] [--icon mdi:x] [--sidebar|--no-sidebar] [--admin|--no-admin]');
+    const d = await findDashboard(urlPath);
+    const patch = {};
+    if (flags.title) patch.title = String(flags.title);
+    if (flags.icon) patch.icon = String(flags.icon);
+    if (flags.sidebar) patch.show_in_sidebar = true;
+    if (flags['no-sidebar']) patch.show_in_sidebar = false;
+    if (flags.admin) patch.require_admin = true;
+    if (flags['no-admin']) patch.require_admin = false;
+    if (!Object.keys(patch).length) die('Nothing to change. Pass --title, --icon, --sidebar/--no-sidebar or --admin/--no-admin.');
+    const upd = await ws({ type: 'lovelace/dashboards/update', dashboard_id: d.id, ...patch });
+    console.log('Updated ' + upd.url_path + ': ' + Object.keys(patch).join(', ') + '.');
+  },
+
+  async ['dashboard-save']() {
+    const urlPath = args[0];
+    if (!urlPath) die("usage: ha dashboard-save <url-path> --body '<json>'   (or pipe JSON on stdin)");
+    await findDashboard(urlPath);
+    const config = flags.body ? JSON.parse(flags.body) : JSON.parse(await readStdin());
+    if (!config || typeof config !== 'object' || !Array.isArray(config.views)) {
+      die('A dashboard config needs a "views" array, e.g. {"views":[{"title":"Home","cards":[]}]}');
+    }
+    const saved = flags['no-backup'] ? null : await snapshotDashboard(urlPath, 'overwrite');
+    await ws({ type: 'lovelace/config/save', url_path: urlPath, config });
+    console.log('Saved ' + config.views.length + ' view' + (config.views.length === 1 ? '' : 's') + ' to ' + urlPath + '.');
+    if (saved) console.log('Previous layout backed up to ' + saved.file);
+  },
+
+  async ['dashboard-delete']() {
+    const urlPath = args[0];
+    if (!urlPath) die('usage: ha dashboard-delete <url-path>');
+    const d = await findDashboard(urlPath);
+    const saved = flags['no-backup'] ? null : await snapshotDashboard(urlPath, 'delete');
+    await ws({ type: 'lovelace/dashboards/delete', dashboard_id: d.id });
+    console.log('Deleted ' + urlPath + '.');
+    if (saved) console.log('Backed up to ' + saved.file + ' - restore with: ha dashboard-restore ' + urlPath);
+  },
+
+  async ['dashboard-restore']() {
+    const urlPath = args[0];
+    if (!urlPath) die('usage: ha dashboard-restore <url-path> [--file <path>]');
+    const file = flags.file || (() => {
+      const hit = listBackups('dashboard.' + urlPath + '.')[0];
+      if (!hit) die('No backup for ' + urlPath + '. See: ha backups');
+      return join(BACKUP_DIR, hit);
+    })();
+    const snap = JSON.parse(readFileSync(file, 'utf8'));
+
+    const list = await ws({ type: 'lovelace/dashboards/list' });
+    if (!list.some((d) => d.url_path === urlPath)) {
+      if (!snap.meta) die(urlPath + ' is gone and the backup has no metadata to rebuild it.');
+      await ws({
+        type: 'lovelace/dashboards/create',
+        url_path: urlPath,
+        title: snap.meta.title,
+        ...(snap.meta.icon ? { icon: snap.meta.icon } : {}),
+        show_in_sidebar: !!snap.meta.show_in_sidebar,
+        require_admin: !!snap.meta.require_admin,
+      });
+      console.log('Recreated ' + urlPath + '.');
+    }
+    if (snap.config) {
+      await ws({ type: 'lovelace/config/save', url_path: urlPath, config: snap.config });
+      console.log('Restored its layout from ' + snap.savedAt + '.');
+    } else {
+      console.log('That backup held no layout, so only the dashboard itself was restored.');
+    }
+  },
+
   async resources() {
     const list = await ws({ type: 'lovelace/resources' });
     if (flags.json) return out(list);
@@ -414,6 +538,39 @@ const commands = {
   async script() { return configObject('script'); },
   async scene() { return configObject('scene'); },
 };
+
+// Dashboards are addressed by url_path on the wire but by dashboard_id for
+// update/delete, so look the pair up rather than guessing the transformation.
+async function findDashboard(urlPath) {
+  const list = await ws({ type: 'lovelace/dashboards/list' });
+  const hit = list.find((d) => d.url_path === urlPath);
+  if (!hit) throw new Error('No dashboard with url_path "' + urlPath + '". Run: ha dashboards');
+  return hit;
+}
+
+// Same contract as snapshot() for automations: never destroy a layout without
+// writing down what was there first. Stores metadata as well as config, so a
+// deleted dashboard can be rebuilt and not just refilled.
+async function snapshotDashboard(urlPath, reason) {
+  const list = await ws({ type: 'lovelace/dashboards/list' });
+  const meta = list.find((d) => d.url_path === urlPath) || null;
+  let config = null;
+  try {
+    config = await ws({ type: 'lovelace/config', url_path: urlPath });
+  } catch (err) {
+    // An auto-generated dashboard genuinely has no stored config; that is not a
+    // failure to read, so do not refuse the operation over it.
+    if (!/no config found|unknown config|not found/i.test(err.message)) {
+      throw new Error('Refusing to ' + reason + ' ' + urlPath +
+        ': could not read its current layout to back it up (' + err.message + ').');
+    }
+  }
+  const file = backupPath('dashboard.' + urlPath + '.' + stamp());
+  writeFileSync(file, JSON.stringify({
+    kind: 'dashboard', urlPath, reason, savedAt: new Date().toISOString(), meta, config,
+  }, null, 2) + '\n', 'utf8');
+  return { file };
+}
 
 async function configObject(kind) {
   const verb = args[0] || 'list';
@@ -524,8 +681,14 @@ const USAGE = `ha -- Home Assistant control
   ha dashboard [url_path]         one dashboard's views and cards
   ha resources                    custom Lovelace resources
   ha whoami                       which Home Assistant user this token is
-  ha homescreen [url_path]        default dashboard, for THIS token's user only
+  ha homescreen [url_path]        default dashboard for this token's user
                                   (--clear resets to the HA default)
+
+  ha dashboard-create <url-path> --title X [--icon mdi:x] [--sidebar] [--admin]
+  ha dashboard-update <url-path> [--title X] [--sidebar|--no-sidebar] ...
+  ha dashboard-save   <url-path> --body '<json>'
+  ha dashboard-delete <url-path>
+  ha dashboard-restore <url-path> [--file <path>]
 
   ha areas | ha devices | ha labels
   ha ws '<json command>'          raw websocket command

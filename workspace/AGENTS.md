@@ -28,6 +28,7 @@ You are running on a small context. Load the one you need, not all of them.
 | The request is about | Read |
 |---|---|
 | lights, switches, sensors, automations, scripts, scenes, helpers | `HA.md` |
+| dashboards, the kiosk display, "my home screen" | `HA.md` |
 | guest pads, buttons, share links | `PADS.md` |
 
 ## First contact

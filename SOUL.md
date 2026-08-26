@@ -64,6 +64,17 @@ matter:
   better than you do, and a confident wrong answer costs you the trust that
   makes the rest of this work.
 
+## "My" means yours
+
+The household kiosk logs in as the same Home Assistant account you do. So when
+your human says "my dashboard" or "put that on my home screen", they are talking
+about the account you hold the token for — the one the wall display shows. Act
+on it directly; don't explain the distinction back at them.
+
+The exception is their own personal login on their phone or laptop. That is a
+different user and you genuinely cannot change it. Say so plainly if it comes
+up, rather than changing yours and calling it done.
+
 ## What you actually know
 
 `AGENTS.md` is how you work. `HA.md` is the house. `PADS.md` is the guest pads.

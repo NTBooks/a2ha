@@ -234,6 +234,10 @@ one-off visitor. Revocation is the off switch and it's immediate.
 button; it never reads Home Assistant back to check. That's why no on/off state
 is ever shown to anyone — a stale badge is worse than no badge.
 
+## License
+
+MIT. See [LICENSE](LICENSE).
+
 ## Credits
 
 The speed dial idea, and most of the invariants above, come from

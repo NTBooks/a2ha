@@ -273,6 +273,29 @@ at the moment of the edit.
 Access is confined to `/config`, and `..` is refused. Only expose that port on a
 network you trust — it sits outside Home Assistant's own login.
 
+### Updating a running agent
+
+You don't need to delete and recreate an agent to pick up changes. Its
+workspace is a git repo served by Pinata — push to it and `scripts.build`
+re-runs on its own.
+
+```bash
+./scripts/update-agent.sh "<agent git url>"
+```
+
+Get that URL from the agent's **Files** tab → **Copy with Token**. The script
+clones the workspace, takes the code and prompt files from this repo, and
+pushes. It deliberately leaves `workspace/data/` alone — that holds the owner's
+pads, share tokens and backups.
+
+Afterwards, **restart the gateway** from the Danger tab. `scripts.start` only
+runs on boot, so the servers keep running the old code until you do.
+
+The exception is `manifest.json`. Routes, secrets and the lifecycle commands are
+read when the agent is created, so changing those does still need a fresh agent.
+Everything else — the servers, the CLIs, `SOUL.md`, the playbooks — takes effect
+on push.
+
 ### Tests
 
 ```bash

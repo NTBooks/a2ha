@@ -205,6 +205,15 @@ const commands = {
     // Worth reporting either way: knowing HA is reached over the tailnet
     // rather than a public URL is the difference between two very different
     // security postures, and it is not obvious from anything else here.
+    if (filesEnabled()) {
+      await probe('file editor', async () => {
+        await filesFetch('/api/listdir?path=%2Fconfig');
+        return `reachable at ${FILES_URL}`;
+      });
+    } else {
+      checks.push(['file editor', 'off', 'YAML editing disabled - see "ha file"']);
+    }
+
     checks.push(['network path', 'ok', proxyInUse()
       ? `tailnet (${process.env.HA_BASE_URL} via ${BASE})`
       : `direct to ${BASE}`]);
@@ -519,6 +528,112 @@ const commands = {
     }
   },
 
+  // ha file ls|read|write|rm|restore
+  async file() {
+    requireFiles();
+    const verb = args[0] || 'ls';
+
+    if (verb === 'ls') {
+      const path = safeConfigPath(args[1] || '/config');
+      const text = await filesFetch(`/api/listdir?path=${encodeURIComponent(path)}`);
+      let listing;
+      try { listing = JSON.parse(text); } catch { return out(text); }
+      for (const d of listing.dirs ?? []) console.log(`${pad('dir', 6)} ${d.name ?? d}`);
+      for (const f of listing.files ?? []) console.log(`${pad('file', 6)} ${f.name ?? f}`);
+      return;
+    }
+
+    if (verb === 'read') {
+      const path = safeConfigPath(args[1]);
+      try {
+        return out(await readConfigFile(path));
+      } catch (err) {
+        if (err.missing) die(`${path} does not exist.`);
+        throw err;
+      }
+    }
+
+    if (verb === 'write') {
+      const path = safeConfigPath(args[1]);
+      const text = flags.body != null && flags.body !== true
+        ? String(flags.body)
+        : await readStdin();
+      if (!text) die('Nothing to write. Pass --body or pipe the new contents on stdin.');
+
+      const saved = flags['no-backup'] ? null : await snapshotFile(path, 'overwrite');
+      await filesFetch('/api/save', { method: 'POST', form: { filename: path, text } });
+      console.log(`Wrote ${text.length} bytes to ${path}.`);
+      if (saved) {
+        console.log(saved.existed
+          ? `Previous contents backed up to ${saved.file}`
+          : `${path} is new; recorded a tombstone at ${saved.file}`);
+      }
+
+      // Validate, and put it back if it broke. An unusable configuration.yaml
+      // means Home Assistant will not restart, and the owner may not find out
+      // until the next reboot -- far too late to connect it to this edit.
+      if (flags['no-check']) {
+        console.log('Skipped the config check (--no-check). Run "ha file check" before restarting.');
+        return;
+      }
+      const { valid, errors } = await checkConfig();
+      if (valid) { console.log('Config still checks out.'); return; }
+
+      console.error('');
+      console.error('Home Assistant says the configuration is now INVALID:');
+      console.error(errors ? String(errors).slice(0, 1200) : '(no detail given)');
+      if (saved && saved.existed) {
+        await filesFetch('/api/save', { method: 'POST', form: { filename: path, text: saved.before } });
+        console.error('');
+        console.error(`Rolled ${path} back to how it was. Nothing was left broken.`);
+      } else if (saved) {
+        console.error('');
+        console.error(`${path} did not exist before. Remove it with: ha file rm ${path}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    if (verb === 'rm') {
+      const path = safeConfigPath(args[1]);
+      const saved = flags['no-backup'] ? null : await snapshotFile(path, 'delete');
+      await filesFetch('/api/delete', { method: 'POST', form: { path } });
+      console.log(`Deleted ${path}.`);
+      if (saved?.existed) console.log(`Backed up to ${saved.file} - restore with: ha file restore ${path}`);
+      return;
+    }
+
+    if (verb === 'restore') {
+      const path = safeConfigPath(args[1]);
+      const key = 'file.' + path.replace(/\//g, '_').replace(/^_/, '') + '.';
+      const chosen = flags.file || (() => {
+        const hit = listBackups(key)[0];
+        if (!hit) die(`No backup for ${path}. See: ha backups`);
+        return join(BACKUP_DIR, hit);
+      })();
+      const snap = JSON.parse(readFileSync(chosen, 'utf8'));
+      if (!snap.existed) {
+        await filesFetch('/api/delete', { method: 'POST', form: { path } });
+        console.log(`${path} did not exist at that point, so it has been removed again.`);
+        return;
+      }
+      await filesFetch('/api/save', { method: 'POST', form: { filename: path, text: snap.body } });
+      console.log(`Restored ${path} from ${snap.savedAt}.`);
+      return;
+    }
+
+    if (verb === 'check') {
+      const { valid, errors } = await checkConfig();
+      if (valid) return console.log('Configuration is valid.');
+      console.error('Configuration is INVALID:');
+      console.error(errors ? String(errors).slice(0, 1600) : '(no detail given)');
+      process.exitCode = 1;
+      return;
+    }
+
+    die('usage: ha file <ls|read|write|rm|restore|check> [path]');
+  },
+
   async resources() {
     const list = await ws({ type: 'lovelace/resources' });
     if (flags.json) return out(list);
@@ -570,6 +685,111 @@ async function snapshotDashboard(urlPath, reason) {
     kind: 'dashboard', urlPath, reason, savedAt: new Date().toISOString(), meta, config,
   }, null, 2) + '\n', 'utf8');
   return { file };
+}
+
+// --- YAML / raw file access --------------------------------------------------
+// Home Assistant has no file API of its own. The File editor add-on does, so
+// this is opt-in: set HA_FILES_URL and it lights up, leave it unset and every
+// file command explains how to turn it on.
+//
+// Studio Code Server is the nicer editor for a human but speaks the VS Code
+// server protocol, not a REST API, so it is no use to us here.
+
+const FILES_URL = String(process.env.HA_FILES_URL ?? '').trim().replace(/\/+$/, '');
+const FILES_USER = String(process.env.HA_FILES_USER ?? '').trim();
+const FILES_PASS = String(process.env.HA_FILES_PASSWORD ?? '').trim();
+
+const FILES_OFF = [
+  'File editing is not enabled on this agent.',
+  '',
+  'To turn it on:',
+  '  1. In Home Assistant, install the "File editor" add-on if you have not already.',
+  '  2. Open its Configuration tab. Under Network, give port 3218 a host port',
+  '     (3218 is fine). Under Options set a username and password.',
+  '  3. Start the add-on.',
+  '  4. Add these secrets to this agent and restart it:',
+  '       HA_FILES_URL       http://<same host as HA_BASE_URL>:3218',
+  '       HA_FILES_USER      the username you set',
+  '       HA_FILES_PASSWORD  the password you set',
+  '',
+  'Only do this if Home Assistant is reachable privately - over your tailnet or',
+  'your LAN. The add-on port has no Home Assistant login in front of it.',
+].join('\n');
+
+function filesEnabled() { return !!FILES_URL; }
+
+function requireFiles() {
+  if (!filesEnabled()) { console.error(FILES_OFF); process.exit(3); }
+}
+
+function filesAuthHeader() {
+  if (!FILES_USER && !FILES_PASS) return {};
+  const raw = Buffer.from(`${FILES_USER}:${FILES_PASS}`).toString('base64');
+  return { Authorization: `Basic ${raw}` };
+}
+
+async function filesFetch(path, { method = 'GET', form } = {}) {
+  const headers = { ...filesAuthHeader() };
+  let body;
+  if (form) {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    body = new URLSearchParams(form).toString();
+  }
+  const res = await fetch(`${FILES_URL}${path}`, {
+    method, headers, body, signal: AbortSignal.timeout(20000),
+  });
+  const text = await res.text().catch(() => '');
+  if (res.status === 401) {
+    throw new Error('The File editor rejected the credentials. Check HA_FILES_USER and HA_FILES_PASSWORD.');
+  }
+  if (!res.ok) throw new Error(`File editor ${method} ${path} -> HTTP ${res.status}: ${text.slice(0, 200)}`);
+  return text;
+}
+
+// Refuse anything outside the config directory. The add-on may or may not
+// enforce a base path itself, and this agent has no business editing the rest
+// of the filesystem regardless.
+function safeConfigPath(input) {
+  const raw = String(input ?? '').trim();
+  if (!raw) throw new Error('Which file?');
+  const full = raw.startsWith('/') ? raw : `/config/${raw}`;
+  const normalised = full.replace(/\/+/g, '/');
+  if (!normalised.startsWith('/config/') && normalised !== '/config') {
+    throw new Error(`Refusing to touch "${normalised}" - file access is limited to /config.`);
+  }
+  if (normalised.includes('/../')) throw new Error('Path traversal is not allowed.');
+  return normalised;
+}
+
+async function readConfigFile(path) {
+  const text = await filesFetch(`/api/file?filename=${encodeURIComponent(path)}`);
+  // The add-on answers a missing file with this literal body and a 200.
+  if (text === 'File not found') { const e = new Error('File not found'); e.missing = true; throw e; }
+  return text;
+}
+
+async function snapshotFile(path, reason) {
+  let before = null;
+  let existed = true;
+  try {
+    before = await readConfigFile(path);
+  } catch (err) {
+    if (err.missing) existed = false;
+    else throw new Error(`Refusing to ${reason} ${path}: could not read it to back it up (${err.message}).`);
+  }
+  const file = backupPath('file.' + path.replace(/\//g, '_').replace(/^_/, '') + '.' + stamp());
+  writeFileSync(file, JSON.stringify({
+    kind: 'file', path, reason, savedAt: new Date().toISOString(), existed, body: before,
+  }, null, 2) + '\n', 'utf8');
+  return { file, existed, before };
+}
+
+// HA's own validator, not the add-on's. A bad configuration.yaml stops Home
+// Assistant from starting, so this is the difference between an edit and an
+// outage.
+async function checkConfig() {
+  const r = await rest('/api/config/core/check_config', { method: 'POST', timeout: 60000 });
+  return { valid: r?.result === 'valid', errors: r?.errors || null };
 }
 
 async function configObject(kind) {
@@ -689,6 +909,13 @@ const USAGE = `ha -- Home Assistant control
   ha dashboard-save   <url-path> --body '<json>'
   ha dashboard-delete <url-path>
   ha dashboard-restore <url-path> [--file <path>]
+
+  ha file ls [path]               list /config
+  ha file read <path>             read a file
+  ha file write <path> --body T   write it, then validate and roll back if broken
+  ha file rm <path>               delete it
+  ha file restore <path>          put a backup back
+  ha file check                   ask HA whether the configuration is valid
 
   ha areas | ha devices | ha labels
   ha ws '<json command>'          raw websocket command

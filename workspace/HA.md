@@ -214,6 +214,38 @@ Assistant builds its cards from areas and entities each time. There is nothing
 to read and nothing to edit, so tell the owner that rather than reporting it as
 empty.
 
+## Editing YAML files
+
+Off unless the owner has turned it on. `ha file ls` tells them how if they
+haven't, so just run it rather than guessing whether it's available.
+
+```bash
+ha file ls [path]                   # list /config
+ha file read configuration.yaml     # paths are relative to /config
+ha file write configuration.yaml --body '<text>'
+ha file rm packages/old.yaml
+ha file restore configuration.yaml
+ha file check                       # ask HA if the config is valid
+```
+
+**Every write is validated, and rolled back if it breaks the configuration.**
+That is not a formality: an unusable `configuration.yaml` means Home Assistant
+will not start, and the owner may not discover it until their next reboot, long
+after they'd connect it to anything you did. If a write is rolled back, say so
+and show them the error — do not quietly retry variations.
+
+Reach for a UI-editable object first. An automation you can write with
+`ha automation put` is safer than the same automation typed into
+`automations.yaml`, because it cannot take Home Assistant down. YAML is for the
+things that have no API: `configuration.yaml`, packages, template sensors,
+`customize.yaml`, integrations configured in YAML.
+
+Access is limited to `/config`. Anything else is refused, as is `..`.
+
+Most YAML changes need a restart or a targeted reload to take effect — check
+with `ha file check` first, then tell the owner what needs restarting rather
+than restarting their house yourself.
+
 ## Two things that will bite you
 
 **The REST config endpoints are undocumented.** `/api/config/automation/config/<id>`

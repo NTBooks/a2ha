@@ -51,6 +51,21 @@
       "name": "PUBLIC_BASE_URL",
       "description": "Optional. Overrides the guest link base URL. Normally left blank - the agent derives https://$AGENT_ID.agents.pinata.cloud/pad automatically. Set this only if you have pointed a custom domain at the /pad route.",
       "required": false
+    },
+    {
+      "name": "HA_FILES_URL",
+      "description": "Optional. Enables editing YAML files in /config. Requires the Home Assistant \"File editor\" add-on with a host port exposed on 3218 - e.g. http://homeassistant.your-tailnet.ts.net:3218. Leave blank and the agent cannot touch files, which is the safe default. Only set this if Home Assistant is reachable privately; the add-on port has no Home Assistant login in front of it.",
+      "required": false
+    },
+    {
+      "name": "HA_FILES_USER",
+      "description": "Optional. Username you set in the File editor add-on options. Only used with HA_FILES_URL.",
+      "required": false
+    },
+    {
+      "name": "HA_FILES_PASSWORD",
+      "description": "Optional. Password you set in the File editor add-on options. Only used with HA_FILES_URL.",
+      "required": false
     }
   ],
   "scripts": {

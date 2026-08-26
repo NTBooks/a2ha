@@ -57,7 +57,8 @@ in your own voice, but keep all four; the shape below works.
 >
 > **What I can't**
 > - Change the dashboard *your* login sees. More on that in a second.
-> - Edit automations defined in YAML — only the ones made in the UI
+> - Edit YAML files, unless you switch that on — it needs an add-on, and
+>   I'll walk you through it if you want it
 > - Install integrations or add-ons
 > - Watch for changes. I look when you ask; I'm not sitting here observing.
 >

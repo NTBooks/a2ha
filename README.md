@@ -91,6 +91,9 @@ Point Pinata at this repo, then attach the secrets:
 | `TS_AUTHKEY` | no | Tailscale auth key — reusable + ephemeral |
 | `TS_HOSTNAME` | no | what the agent is called in your tailnet (default `a2ha`) |
 | `HA_AGENT_ID` | no | a specific HA Assist agent, for `--say` buttons |
+| `HA_FILES_URL` | no | enables YAML editing — see below |
+| `HA_FILES_USER` | no | File editor add-on username |
+| `HA_FILES_PASSWORD` | no | File editor add-on password |
 | `PUBLIC_BASE_URL` | no | only if you point a custom domain at the `/pad` route |
 
 You'll also pick an LLM provider in the create wizard — your own Anthropic /
@@ -149,6 +152,38 @@ workspace/
 The config server is the **only writer** of `data/`. The agent manages pads by
 calling that server over loopback rather than editing JSON, so the web app and
 the agent can't race each other.
+
+### Editing YAML (optional)
+
+Off by default. Home Assistant has no file API, so this needs the **File
+editor** add-on with a host port exposed:
+
+1. Install the *File editor* add-on.
+2. Configuration tab → Network → give port **3218** a host port. Options → set
+   a username and password.
+3. Start it, then set `HA_FILES_URL` (e.g.
+   `http://homeassistant.your-tailnet.ts.net:3218`), `HA_FILES_USER` and
+   `HA_FILES_PASSWORD` on the agent.
+
+```bash
+node workspace/bin/ha.mjs file read configuration.yaml
+node workspace/bin/ha.mjs file write configuration.yaml --body '<text>'
+```
+
+**Writes are validated and rolled back if they break the config.** After each
+write the agent asks Home Assistant whether the configuration is still valid; if
+not, the previous contents go back and you get the error. A broken
+`configuration.yaml` stops HA from starting, and you'd usually find out at the
+next reboot rather than at the moment of the edit.
+
+Access is confined to `/config`, and `..` is refused.
+
+Studio Code Server is the nicer editor for a person, but it speaks the VS Code
+server protocol rather than a REST API, so it can't be driven this way. File
+editor is the one with an actual API.
+
+Only expose that port on a network you trust — over the tailnet or your LAN. It
+sits outside Home Assistant's own login.
 
 ### Backups
 

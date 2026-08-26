@@ -634,6 +634,108 @@ const commands = {
     die('usage: ha file <ls|read|write|rm|restore|check> [path]');
   },
 
+  // ha helper list|create|delete
+  //
+  // Helpers live on the WebSocket API, one namespace per domain, and delete
+  // takes <domain>_id -- the object id, NOT the entity_id. Getting that wrong
+  // is why an agent could create helpers but never remove them, and a run that
+  // half-worked left debris behind with no way to tidy it.
+  async helper() {
+    const verb = args[0] || 'list';
+    const HELPER_DOMAINS = ['input_number', 'input_boolean', 'input_text', 'input_select',
+      'input_datetime', 'input_button', 'timer', 'counter'];
+
+    const listDomain = async (d) => {
+      try { return (await ws({ type: `${d}/list` })).map((h) => ({ ...h, domain: d })); }
+      catch { return []; }  // domain not loaded on this install
+    };
+
+    if (verb === 'list') {
+      const only = args[1];
+      const domains = only ? [only] : HELPER_DOMAINS;
+      let any = false;
+      for (const d of domains) {
+        const rows = await listDomain(d);
+        for (const h of rows) {
+          any = true;
+          console.log(`${pad(`${d}.${h.id}`, 44)} ${h.name ?? ''}`);
+        }
+      }
+      if (!any) console.log('No storage-mode helpers. (Helpers defined in YAML are not listed here.)');
+      console.log('');
+      console.log('Only helpers created through the UI or this tool appear here; YAML ones');
+      console.log('cannot be deleted through the API.');
+      return;
+    }
+
+    if (verb === 'create') {
+      const domain = args[1];
+      if (!HELPER_DOMAINS.includes(domain)) {
+        die(`usage: ha helper create <${HELPER_DOMAINS.join('|')}> --name "..." [options]`);
+      }
+      const name = flags.name && flags.name !== true ? String(flags.name) : null;
+      if (!name) die('A helper needs --name.');
+
+      // Home Assistant does not reject a duplicate name -- it quietly appends
+      // _2 and hands back a second entity. That is how debris accumulates, so
+      // refuse instead and point at what already exists.
+      const existing = (await listDomain(domain)).find((h) => h.name === name);
+      if (existing && !flags.force) {
+        die(`${domain}.${existing.id} already has the name "${name}".\n` +
+            `Home Assistant would silently create a duplicate. Reuse that one, pick another\n` +
+            `name, or pass --force if you genuinely want two.`);
+      }
+
+      const payload = { name };
+      for (const k of ['min', 'max', 'step', 'initial']) {
+        if (flags[k] !== undefined) payload[k] = Number(flags[k]);
+      }
+      for (const k of ['icon', 'mode', 'unit_of_measurement', 'duration']) {
+        if (flags[k] !== undefined && flags[k] !== true) payload[k] = String(flags[k]);
+      }
+      if (flags.options && flags.options !== true) payload.options = String(flags.options).split(',');
+
+      const made = await ws({ type: `${domain}/create`, ...payload });
+      console.log(`Created ${domain}.${made.id}${made.name ? ` ("${made.name}")` : ''}.`);
+      return;
+    }
+
+    if (verb === 'delete') {
+      const ref = args[1];
+      if (!ref) die('usage: ha helper delete <entity_id>');
+      const domain = ref.includes('.') ? ref.split('.')[0] : args[2];
+      const id = ref.includes('.') ? ref.split('.').slice(1).join('.') : ref;
+      if (!HELPER_DOMAINS.includes(domain)) {
+        die(`"${ref}" is not a helper. Helper domains: ${HELPER_DOMAINS.join(', ')}`);
+      }
+
+      const rows = await listDomain(domain);
+      const hit = rows.find((h) => h.id === id);
+      if (!hit) {
+        die(`No storage-mode ${domain} with id "${id}".\n` +
+            `It may be defined in YAML, which cannot be deleted through the API. Run: ha helper list ${domain}`);
+      }
+
+      // Same rule as everywhere else: write down what was there first.
+      if (!flags['no-backup']) {
+        const file = backupPath(`helper.${domain}.${id}.${stamp()}`);
+        writeFileSync(file, JSON.stringify({
+          kind: 'helper', domain, id, reason: 'delete',
+          savedAt: new Date().toISOString(), body: hit,
+        }, null, 2) + '\n', 'utf8');
+        console.log(`Backed up to ${file}`);
+      }
+
+      // The key is <domain>_id, not entity_id. This is the bit that is easy to
+      // get wrong and looks like "deleting helpers is impossible".
+      await ws({ type: `${domain}/delete`, [`${domain}_id`]: id });
+      console.log(`Deleted ${domain}.${id}.`);
+      return;
+    }
+
+    die('usage: ha helper <list|create|delete> ...');
+  },
+
   async resources() {
     const list = await ws({ type: 'lovelace/resources' });
     if (flags.json) return out(list);
@@ -916,6 +1018,10 @@ const USAGE = `ha -- Home Assistant control
   ha file rm <path>               delete it
   ha file restore <path>          put a backup back
   ha file check                   ask HA whether the configuration is valid
+
+  ha helper list [domain]         helpers this agent can manage
+  ha helper create <domain> --name "..." [--min --max --step --icon --options]
+  ha helper delete <entity_id>    remove one (backs it up first)
 
   ha areas | ha devices | ha labels
   ha ws '<json command>'          raw websocket command

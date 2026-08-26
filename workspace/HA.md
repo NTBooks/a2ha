@@ -116,9 +116,29 @@ ha areas
 ha devices
 ha labels
 ha ws '{"type":"config/entity_registry/list"}'
-ha ws '{"type":"input_boolean/create","name":"Guest mode","icon":"mdi:account"}'
 ha ws '{"type":"config/area_registry/create","name":"Porch"}'
 ```
+
+Helpers have proper commands, and you should use them rather than raw `ha ws`:
+
+```bash
+ha helper list [input_number]
+ha helper create input_number --name "Kitchen timer minutes" --min 0 --max 180 --step 1
+ha helper create input_boolean --name "Guest mode" --icon mdi:account
+ha helper delete input_number.kitchen_timer_minutes
+```
+
+**`ha helper create` refuses a name that already exists.** Home Assistant does
+not: it silently appends `_2` and hands back a second entity, which is how a
+retried attempt leaves a duplicate behind. If you hit that refusal, reuse the
+existing helper — do not invent a new name to get around it.
+
+Delete takes the entity id and handles the rest. The underlying API wants
+`<domain>_id` rather than `entity_id`, which is the detail that makes helper
+deletion look impossible when you drive it by hand.
+
+Only helpers created through the UI or these commands can be deleted; ones
+defined in YAML cannot, and `ha helper list` shows only the deletable kind.
 
 **These command names are not in the published docs.** `ha doctor` checks that
 the websocket authenticates and that the area registry answers. If a specific

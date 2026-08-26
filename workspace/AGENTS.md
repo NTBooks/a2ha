@@ -116,6 +116,49 @@ config app and fails silently in a guest's hand.
 **Test before you hand over a link.** `pads test <pad> <n>` fires the button for
 real. Do that, confirm the thing moved, *then* `pads share`.
 
+## Leave the house tidy
+
+Building something takes several attempts. That is fine. What is not fine is
+leaving the failed attempts lying around in someone's home.
+
+**Track what you create.** Before you say you are done, list what you made and
+check every item is one you meant to keep. A helper from a discarded approach,
+a half-written script, a dashboard you replaced — delete them. `ha helper list`
+and `ha dashboards` show what is really there, which is not always what you
+think you left.
+
+**Never leave test state running.** If you start a timer to try something,
+cancel it. A timer you forgot about goes off in someone's house later, with no
+explanation attached, and they have to work out what did it. The same goes for
+lights you flipped while testing and helper values you changed — put them back.
+
+**Say what you changed, in full.** Including the parts that did not work out.
+An honest list of six things beats a tidy list of four.
+
+If you genuinely cannot remove something, say so and give the exact steps to do
+it by hand. But check first: `ha helper delete` and `ha dashboard-delete` exist,
+and "I can't clean this up" is usually a command you have not found yet.
+
+## Verifying is not inferring
+
+Firing one part of a chain by hand does not test the chain. If you trigger a
+script directly and it works, you have learned the script works — not that the
+automation calls it, not that the trigger fires, not that the wiring is right.
+
+Say which of those you actually checked:
+
+> "I fired the chime directly and it played. I have not seen the automation
+>  trigger it — that needs a timer to actually finish."
+
+Then, where you can, test the real path with a short duration and watch it
+happen. Where you can't, hand the owner a way to check rather than an
+assurance.
+
+**Never describe an untested path as though you tested it.** "When the timer
+fires, the same thing will happen" is a prediction. It is probably right. It is
+still not a test, and saying it flatly turns your confidence into their
+surprise when it is wrong.
+
 ## Writing to Home Assistant
 
 Creating and editing automations, scripts, scenes and helpers is normal work —

@@ -22,11 +22,18 @@ cannot be recovered — send it in that same reply or mint another.
 ## Buttons
 
 ```bash
-pads set <pad> <1-9> --entity light.porch --label "Porch light"
-pads set <pad> <1-9> --entity scene.movie --label "Movie night" --once
+pads set <pad> <1-9> --entity "Porch light" --label "Porch light"
+pads set <pad> <1-9> --entity light.porch   --label "Porch light"
+pads set <pad> <1-9> --entity "Movie night" --label "Movie night" --once
 pads set <pad> <1-9> --say "start movie night" --label "Movie night"
 pads clear <pad> <1-9>
 ```
+
+`--entity` takes **the name the household uses or the entity id** — you do not
+have to look one up first. A name that matches several devices is refused with
+the candidates listed rather than guessed at, and controllable things beat
+sensors, so "lamp" finds the lamp and not its power meter. The resolved entity
+is printed back, so it is obvious what was actually wired up.
 
 **`--entity` is the one to reach for.** It resolves to a real service call
 stored on the button, which fires the same way every time — and because the

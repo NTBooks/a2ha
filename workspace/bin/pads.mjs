@@ -54,8 +54,45 @@ async function api(path, opts = {}) {
 // produce a button that fails on every second press.
 const PAIRED = ['light', 'switch', 'fan', 'input_boolean', 'media_player', 'humidifier', 'climate'];
 
+// Owners know their devices by name. Accept either, and refuse to guess when a
+// name is ambiguous -- silently picking one of three lamps is worse than asking.
+// A pad button controls something, so a sensor that merely shares a name with
+// the device it measures should never win the match.
+const CONTROLLABLE = ['light','switch','fan','cover','lock','media_player','scene','script','button','input_boolean','climate','humidifier','vacuum','automation'];
+const preferControllable = (list) => {
+  const hit = list.filter((e) => CONTROLLABLE.includes(e.domain));
+  return hit.length ? hit : list;
+};
+
+async function resolveEntity(typed) {
+  const q = String(typed || '').trim();
+  if (!q) die('Which device?');
+  const { entities: raw } = await api('/ha/entities?q=' + encodeURIComponent(q));
+  const entities = preferControllable(raw);
+  const lower = q.toLowerCase();
+
+  const byId = entities.find((e) => e.entity_id.toLowerCase() === lower);
+  if (byId) return byId.entity_id;
+
+  const exact = preferControllable(entities.filter((e) => (e.name || '').toLowerCase() === lower));
+  if (exact.length === 1) return exact[0].entity_id;
+  if (exact.length > 1) {
+    console.error('Several devices are called "' + q + '":');
+    for (const e of exact) console.error('  ' + e.entity_id);
+    die('Use the one you want.');
+  }
+
+  if (entities.length === 1) return entities[0].entity_id;
+  if (entities.length > 1) {
+    console.error('"' + q + '" matches ' + entities.length + ' devices:');
+    for (const e of entities.slice(0, 8)) console.error('  ' + pad(e.entity_id, 40) + ' ' + e.name);
+    if (entities.length > 8) console.error('  ... and ' + (entities.length - 8) + ' more');
+    die('Be more specific.');
+  }
+  die('No device matching "' + q + '".');
+}
+
 function actionsFor(entity, { toggle = true } = {}) {
-  if (!entity || !entity.includes('.')) die('Entity must look like light.porch');
   const domain = entity.split('.')[0];
   if (toggle && PAIRED.includes(domain)) {
     return {
@@ -127,7 +164,9 @@ const commands = {
         off: flags.sayoff ? { type: 'assist', text: String(flags.sayoff) } : null,
       };
     } else if (flags.entity) {
-      const a = actionsFor(String(flags.entity), { toggle: !flags.once });
+      const entity = await resolveEntity(String(flags.entity));
+      if (entity !== String(flags.entity)) console.log(`"${flags.entity}" -> ${entity}`);
+      const a = actionsFor(entity, { toggle: !flags.once });
       body = { label: flags.label || '', on: a.on, off: a.off };
     } else {
       die('Give the button something to do: --entity light.porch or --say "turn on the lights"');
@@ -190,7 +229,7 @@ const USAGE = `pads -- guest pads and share links
   pads new <pad> [--title "..."]
   pads delete <pad>
 
-  pads set <pad> <1-9> --entity light.porch [--label "Porch light"] [--once]
+  pads set <pad> <1-9> --entity "Porch light" [--label "..."] [--once]
   pads set <pad> <1-9> --say "start movie night" [--sayoff "..."] [--label "..."]
   pads clear <pad> <1-9>
   pads test  <pad> <1-9> [--off]
@@ -199,8 +238,10 @@ const USAGE = `pads -- guest pads and share links
   pads links [pad]
   pads revoke <link-id>
 
---entity makes a real on/off toggle where the domain supports it; --once forces
-a single action. --say sends a phrase to HA Assist instead of a service call.`;
+--entity takes a device name or an entity id, and makes a real on/off toggle
+where the domain supports it; --once forces a single action. Prefer it: a named
+device can show its state on the pad and read the house before toggling.
+--say sends a phrase to HA Assist instead, for things with no clean entity.`;
 
 const cmd = args.shift();
 if (!cmd || cmd === 'help' || flags.help) { console.log(USAGE); process.exit(0); }

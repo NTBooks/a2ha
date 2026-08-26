@@ -35,6 +35,8 @@ export const UI = `<!doctype html>
     border-radius:12px; padding:1rem; margin-bottom:1rem;
   }
   .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
+  /* [hidden] loses to display:flex above, so hiding needs its own class. */
+  .row.gone { display:none; }
   .row + .row { margin-top:.6rem; }
   .spread { justify-content:space-between; }
   input, select, button, textarea {
@@ -182,19 +184,19 @@ export const UI = `<!doctype html>
         '<span class="slotno">' + n + '</span>' +
         '<input class="grow f-label" placeholder="Button label, e.g. Porch light" value="' + esc(label) + '" maxlength="60">' +
         '<select class="f-mode">' +
-          '<option value="service"' + (!isAssist ? ' selected' : '') + '>Device</option>' +
-          '<option value="assist"' + (isAssist ? ' selected' : '') + '>Spoken phrase</option>' +
+          '<option value="service"' + (!isAssist ? ' selected' : '') + '>Pick a device</option>' +
+          '<option value="assist"' + (isAssist ? ' selected' : '') + '>Say it in words</option>' +
         '</select>' +
       '</div>' +
-      '<div class="row f-service" ' + (isAssist ? 'hidden' : '') + '>' +
-        '<input class="grow f-entity" list="entlist" placeholder="Entity, e.g. light.porch" value="' + esc(entityVal) + '">' +
+      '<div class="row f-service' + (isAssist ? ' gone' : '') + '">' +
+        '<input class="grow f-entity" list="entlist" placeholder="Type a device name, e.g. Porch light" value="' + esc(entityVal) + '">' +
         '<select class="f-behaviour">' +
           '<option value="toggle"' + (wantToggle ? ' selected' : '') + '>On / off toggle</option>' +
           '<option value="once"' + (!wantToggle ? ' selected' : '') + '>Single action</option>' +
         '</select>' +
       '</div>' +
-      '<div class="row f-assist" ' + (isAssist ? '' : 'hidden') + '>' +
-        '<input class="grow f-assist-on" placeholder="Phrase, e.g. turn on the porch light" value="' + esc(assistOn) + '">' +
+      '<div class="row f-assist' + (isAssist ? '' : ' gone') + '">' +
+        '<input class="grow f-assist-on" placeholder="What to say, e.g. turn on the porch light" value="' + esc(assistOn) + '">' +
         '<input class="grow f-assist-off" placeholder="Off phrase (optional, makes it a toggle)" value="' + esc(assistOff) + '">' +
       '</div>' +
       '<div class="row">' +
@@ -277,7 +279,8 @@ export const UI = `<!doctype html>
             document.body.appendChild(dl);
           }
           dl.innerHTML = entities.map(function (e) {
-            return '<option value="' + esc(e.entity_id) + '">' + esc(e.name) + '</option>';
+            // value is what lands in the box; label is the hint beside it.
+            return '<option value="' + esc(e.name) + '">' + esc(e.entity_id) + '</option>';
           }).join('');
         }).catch(function () {});
       }
@@ -306,6 +309,47 @@ export const UI = `<!doctype html>
       .catch(function (e) { toast(e.message, true); });
   });
 
+  // Owners know their devices by name, not by entity id. Accept either, and
+  // when a name is ambiguous say which ones it matched instead of guessing.
+  // A pad button controls something. Sensors sharing a name with the thing they
+  // measure ("Bedroom Lamp Power") would otherwise crowd out the actual lamp.
+  var CONTROLLABLE = ['light','switch','fan','cover','lock','media_player','scene','script','button','input_boolean','climate','humidifier','vacuum','automation'];
+  function controllable(list) {
+    var hit = list.filter(function (e) { return CONTROLLABLE.indexOf(e.domain) >= 0; });
+    return hit.length ? hit : list;
+  }
+
+  function resolveEntity(typed) {
+    var q = typed.toLowerCase();
+    var byId = entities.filter(function (e) { return e.entity_id.toLowerCase() === q; });
+    if (byId.length) return byId[0].entity_id;
+
+    var exact = controllable(entities.filter(function (e) { return (e.name || '').toLowerCase() === q; }));
+    if (exact.length === 1) return exact[0].entity_id;
+    if (exact.length > 1) {
+      throw new Error('Several devices are called "' + typed + '": ' +
+        exact.map(function (e) { return e.entity_id; }).join(', ') +
+        '. Type the one you want.');
+    }
+
+    var partial = controllable(entities.filter(function (e) {
+      return (e.name || '').toLowerCase().indexOf(q) >= 0 || e.entity_id.toLowerCase().indexOf(q) >= 0;
+    }));
+    if (partial.length === 1) return partial[0].entity_id;
+    if (partial.length > 1 && partial.length <= 6) {
+      throw new Error('Did you mean: ' + partial.map(function (e) {
+        return e.name + ' (' + e.entity_id + ')';
+      }).join(' / ') + '?');
+    }
+    if (partial.length > 6) {
+      throw new Error('"' + typed + '" matches ' + partial.length + ' devices. Be more specific.');
+    }
+    if (!entities.length) {
+      throw new Error('No device list loaded yet - is the house connected?');
+    }
+    throw new Error('No device called "' + typed + '". Start typing and pick from the list.');
+  }
+
   function buildActions(slotEl) {
     var mode = slotEl.querySelector('.f-mode').value;
     if (mode === 'assist') {
@@ -314,8 +358,9 @@ export const UI = `<!doctype html>
       if (!on) throw new Error('Enter a phrase for this button.');
       return { on: { type: 'assist', text: on }, off: off ? { type: 'assist', text: off } : null };
     }
-    var ent = slotEl.querySelector('.f-entity').value.trim();
-    if (!ent || ent.indexOf('.') < 0) throw new Error('Pick an entity, e.g. light.porch');
+    var typed = slotEl.querySelector('.f-entity').value.trim();
+    if (!typed) throw new Error('Which device? Start typing its name.');
+    var ent = resolveEntity(typed);
     var domain = ent.split('.')[0];
     var behaviour = slotEl.querySelector('.f-behaviour').value;
     // turn_on/turn_off exist across light, switch, fan, cover-ish domains; for
@@ -339,8 +384,8 @@ export const UI = `<!doctype html>
     if (!ev.target.classList.contains('f-mode')) return;
     var slotEl = ev.target.closest('.slot');
     var assist = ev.target.value === 'assist';
-    slotEl.querySelector('.f-service').hidden = assist;
-    slotEl.querySelector('.f-assist').hidden = !assist;
+    slotEl.querySelector('.f-service').classList.toggle('gone', assist);
+    slotEl.querySelector('.f-assist').classList.toggle('gone', !assist);
   });
 
   app.addEventListener('click', function (ev) {
@@ -370,10 +415,12 @@ export const UI = `<!doctype html>
         var a = buildActions(slotEl);
         payload = { label: slotEl.querySelector('.f-label').value.trim(), on: a.on, off: a.off };
       } catch (e) { return toast(e.message, true); }
+      var what = payload.on && payload.on.target && payload.on.target.entity_id;
       return api('/pads/' + encodeURIComponent(pad) + '/slots/' + slot, {
         method: 'PUT', body: JSON.stringify(payload)
-      }).then(refresh).then(function () { toast('Button ' + slot + ' saved.'); })
-        .catch(function (e) { toast(e.message, true); });
+      }).then(refresh).then(function () {
+        toast('Button ' + slot + ' saved' + (what ? ' - ' + what : '') + '.');
+      }).catch(function (e) { toast(e.message, true); });
     }
 
     if (btn.classList.contains('f-test') || btn.classList.contains('f-testoff')) {

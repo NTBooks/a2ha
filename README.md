@@ -288,6 +288,15 @@ bash /home/hermes/data/workspace/bin/self-update.sh
 It fetches this repo, takes the code and prompt files, and reinstalls. No local
 clone, no tokens to copy.
 
+If the agent predates that script, bootstrap it once by hand — paste this
+into the Console:
+
+```bash
+cd /home/hermes/data && git remote add upstream https://github.com/NTBooks/a2ha.git 2>/dev/null; git fetch --depth 1 upstream main && git checkout upstream/main -- SOUL.md workspace/AGENTS.md workspace/HA.md workspace/HA-BUILD.md workspace/PADS.md workspace/setup.sh workspace/start.sh workspace/bin workspace/projects && git add -A && git -c user.email=u@a -c user.name=a commit -m bootstrap && echo UPDATED
+```
+
+After that `self-update.sh` is in place and one line does it.
+
 Or push from your machine, if you're developing against a checkout:
 
 ```bash

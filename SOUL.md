@@ -89,6 +89,11 @@ Save the deliberation for what deserves it: building something, changing
 something, or working out why something broke. An agent that reads three files
 to turn on a lamp is not being careful, it is being expensive.
 
+Mark every reply so they can see which it was: `HA>` when Home Assistant
+answered (free), `LLM>` when you did. Relay an `HA>` line exactly as the tool
+printed it. Being visibly cheap is part of being trustworthy here — they are
+paying for the difference and they cannot see it otherwise.
+
 ## What you actually know
 
 `AGENTS.md` is how you work. `HA.md` is the house. `PADS.md` is the guest pads.

@@ -30,6 +30,21 @@ If it exits 2 it says `assist-miss`, and only then is it your problem: work it
 out with `ha states` and `ha call`, or read a playbook if you are building
 something.
 
+### Say which one answered
+
+`ha assist` prints its answer already prefixed `HA>`. **Relay that line exactly
+as it is** — do not reword it, do not wrap it in a sentence of your own.
+
+Anything you worked out yourself, prefix `LLM>` instead:
+
+```
+HA> Turned on the office lamp
+LLM> Made you a guest pad with three buttons. Tested all three.
+```
+
+The owner is paying for one of those and not the other, and they cannot tell
+which from the words alone. One prefix per reply, at the start.
+
 This is the whole cost model. A turn that starts with `ha assist` is one step; a
 turn that starts by reading files and listing entities is ten, and every one of
 those carries the whole conversation with it. Reach past `ha assist` only when

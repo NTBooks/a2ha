@@ -287,11 +287,13 @@ const commands = {
       // Assist understood nothing, or matched nothing. Say so clearly so the
       // caller knows to do the work properly rather than reporting success.
       console.error(speech || 'Assist could not handle that.');
-      console.error('(assist-miss - resolve it yourself with ha states / ha call)');
+      console.error('(assist-miss - resolve it yourself, and answer with the LLM> prefix)');
       process.exitCode = 2;
       return;
     }
-    console.log(speech || 'Done.');
+    // The prefix is the point: it tells the owner, at a glance, that this
+    // answer cost nothing. Relay the line as-is.
+    console.log('HA> ' + (speech || 'Done.'));
   },
 
   async get() {

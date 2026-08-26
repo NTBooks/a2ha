@@ -117,6 +117,16 @@ describe('share tokens', () => {
     }
   });
 
+  test('deleting a pad snapshots it first', async () => {
+    await seedPad();
+    const r = await pads.deletePad('guest');
+    assert.ok(r.backup, 'no backup path returned');
+    const { readFileSync } = await import('node:fs');
+    const snap = JSON.parse(readFileSync(r.backup, 'utf8'));
+    assert.equal(snap.body.pads[0].name, 'guest');
+    assert.equal(snap.body.pads[0].slots.length, 2);
+  });
+
   test('deleting a pad revokes its links rather than leaving them dangling', async () => {
     await seedPad();
     const r = await shares.mint('guest', { ttl: 0 });

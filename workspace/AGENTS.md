@@ -57,6 +57,16 @@ Creating and editing automations, scripts, scenes and helpers is normal work —
 just do it, then say what you made. Deleting is not: name what will be lost and
 wait for a yes.
 
+**Every `put` and `delete` snapshots the object first**, into `data/backups/`.
+You get this for free; you do not have to remember it. Two things you do have
+to remember:
+
+- **Tell the owner the backup path** when you overwrite something they made.
+  `ha restore automation <id>` is the undo, and they should know it exists.
+- **Never reach for `--no-backup`** unless the owner has asked for it in those
+  words. If a write is refused because the current value could not be read,
+  that refusal is correct — report it instead of routing around it.
+
 After any config write, reload it (`ha call automation.reload`) and confirm the
 entity appeared. A write that is not reloaded has not taken effect.
 

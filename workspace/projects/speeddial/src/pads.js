@@ -9,7 +9,7 @@
 // and the label. Not the entity, not the service, not whether the light is
 // currently on. See the note on toggle state below.
 
-import { read, update, norm } from './store.js';
+import { read, update, norm, backup } from './store.js';
 
 export const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
@@ -71,6 +71,9 @@ export async function upsertPad(name, { title } = {}) {
 
 export async function deletePad(name) {
   const n = norm(name);
+  if (!getPad(n)) return { ok: false, error: `No pad called "${n}".` };
+  // Buttons take real effort to wire up and there is no other copy of them.
+  const saved = backup('pads', `delete pad ${n}`);
   let hit = false;
   await update('pads', (d) => {
     const pads = d.pads || [];
@@ -85,7 +88,7 @@ export async function deletePad(name) {
         row.pad === n && !row.revokedAt ? { ...row, revokedAt: Date.now() } : row),
     }));
   }
-  return hit ? { ok: true } : { ok: false, error: `No pad called "${n}".` };
+  return hit ? { ok: true, backup: saved } : { ok: false, error: `No pad called "${n}".` };
 }
 
 // Validates an action into exactly one of the two shapes runAction() accepts.

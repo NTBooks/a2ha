@@ -53,9 +53,34 @@ ha automation delete porch_dusk
 ha call automation.reload
 ```
 
-`script` and `scene` take the same four verbs. **Always reload after a write** —
+`script` and `scene` take the same verbs. **Always reload after a write** —
 `ha call automation.reload`, `script.reload`, `scene.reload`. A write that is not
 reloaded has not taken effect, and the entity will not exist yet.
+
+### Every write is backed up first
+
+`put` and `delete` snapshot the object into `data/backups/` before touching it.
+This is the only rollback that exists — Home Assistant keeps no history of its
+own, and an overwritten automation is otherwise gone.
+
+```bash
+ha backups                          # newest first
+ha backups porch                    # filtered
+ha restore automation porch_dusk    # roll back to the most recent snapshot
+ha restore automation porch_dusk --file data/backups/automation.porch_dusk.2026-08-26T18-22-23.json
+```
+
+If the object did not exist when the snapshot was taken, the backup is a
+tombstone and restoring it **deletes** the object rather than inventing one.
+
+If the current value cannot be read, the write is **refused** rather than done
+without a net. That is the right outcome: proceeding would mean promising a
+rollback you cannot deliver. `--no-backup` overrides it, and you should say so
+out loud when you use it.
+
+Tell the owner the backup path when you overwrite something of theirs. It is
+the difference between "I changed your automation" and "I changed your
+automation and here is how to undo it".
 
 An automation body looks like this:
 

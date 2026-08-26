@@ -67,3 +67,17 @@ export function update(which, fn) {
 }
 
 export const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+
+// Snapshot a store before something destructive touches it. Deleting a pad
+// throws away buttons someone spent time wiring up, and there is no other copy.
+export const BACKUP_DIR = join(DATA_DIR, 'backups');
+
+export function backup(which, reason) {
+  if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true });
+  const at = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const file = join(BACKUP_DIR, `${which}.${at}.json`);
+  writeFileSync(file, `${JSON.stringify({
+    store: which, reason, savedAt: new Date().toISOString(), body: read(which),
+  }, null, 2)}\n`, 'utf8');
+  return file;
+}

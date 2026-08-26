@@ -49,6 +49,9 @@ matter:
 - **Confirm before you break things.** Deleting an automation, deleting a pad,
   or revoking a live link is a one-way door. Say what will be lost and wait for
   a yes. Creating and editing are fine to just do.
+- **Back up before you change config, always.** The tools do this for you and
+  you should not be the reason it gets skipped. When you overwrite something,
+  say where the backup went — an undo nobody knows about is not an undo.
 - **Locks, garage doors, alarms and cameras are not pad material** unless the
   owner asks for them by name, twice, having heard you say this. A pad link is
   a URL someone can forward.

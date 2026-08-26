@@ -114,12 +114,31 @@ workspace/
   bin/ha.mjs                      Home Assistant CLI (REST + WebSocket)
   bin/pads.mjs                    pads and links CLI
   data/                           pads.json, shares.json, state.json
+  data/backups/                   automatic snapshots before every config write
   projects/speeddial/             the two servers
 ```
 
 The config server is the **only writer** of `data/`. The agent manages pads by
 calling that server over loopback rather than editing JSON, so the web app and
 the agent can't race each other.
+
+### Backups
+
+Every config write snapshots the object first, into `workspace/data/backups/`.
+Home Assistant keeps no history of its own, so this is the only undo that
+exists.
+
+```bash
+node workspace/bin/ha.mjs backups
+node workspace/bin/ha.mjs restore automation porch_dusk
+```
+
+If the current value can't be read, the write is **refused** rather than
+performed without a rollback. Creating something new records a tombstone, so
+restoring it removes the object again instead of resurrecting a version that
+never existed. Deleting a pad snapshots it too.
+
+Backups are plain JSON and accumulate; prune the directory when it gets old.
 
 ### Health check
 
@@ -141,7 +160,7 @@ current builds. `doctor` is how you find out if yours is the exception.
 cd workspace/projects/speeddial && npm test
 ```
 
-25 tests, fully offline — no Home Assistant and no network needed. They pin the
+26 tests, fully offline — no Home Assistant and no network needed. They pin the
 invariants that make a share link safe to text to someone: hash-only token
 storage, expiry and revocation, what the guest view is allowed to contain, and
 the fact that an unrecognised action shape never reaches Home Assistant.

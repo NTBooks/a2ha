@@ -55,7 +55,9 @@ pads revoke <link-id>
 idea for a one-off visitor — a link is a URL and URLs get forwarded. Revoking is
 the off switch, and it takes effect on the guest's very next tap.
 
-Deleting a pad revokes every link to it.
+Deleting a pad revokes every link to it, and snapshots the pad into
+`data/backups/` first so the buttons are recoverable. Say so when you delete
+one — "gone" and "gone but recoverable" are different promises.
 
 ## What a guest can see
 

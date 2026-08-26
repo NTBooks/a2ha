@@ -35,6 +35,56 @@ for (let i = 0; i < argv.length; i++) {
 const die = (msg, code = 1) => { console.error(msg); process.exit(code); };
 const out = (v) => console.log(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 
+// --- backups -----------------------------------------------------------------
+// Nothing that edits a config object is allowed to do so without first writing
+// down what was there. Overwriting someone's automation with a bad body is an
+// easy mistake and, without this, an unrecoverable one -- Home Assistant keeps
+// no history of its own.
+//
+// A backup of an object that did not exist yet is recorded as a tombstone, so
+// restoring it correctly deletes rather than resurrecting something invented.
+
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const BACKUP_DIR = process.env.BACKUP_DIR
+  || join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'backups');
+
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+async function snapshot(kind, id, reason) {
+  let before = null;
+  let existed = true;
+  try {
+    before = await rest(`/api/config/${kind}/config/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err.status === 404) existed = false;
+    else {
+      // We could not read the current value, so we cannot promise a rollback.
+      // Say so loudly rather than proceeding as if the net were there.
+      throw new Error(
+        `Refusing to ${reason} ${kind}.${id}: could not read its current value to back it up (${err.message}).\n` +
+        'Re-run with --no-backup if you have decided to proceed without a rollback.');
+    }
+  }
+
+  mkdirSync(BACKUP_DIR, { recursive: true });
+  const file = join(BACKUP_DIR, `${kind}.${id}.${stamp()}.json`);
+  writeFileSync(file, `${JSON.stringify({
+    kind, id, reason, savedAt: new Date().toISOString(), existed, body: before,
+  }, null, 2)}\n`, 'utf8');
+  return { file, existed };
+}
+
+function listBackups(filter = '') {
+  if (!existsSync(BACKUP_DIR)) return [];
+  return readdirSync(BACKUP_DIR)
+    .filter((f) => f.endsWith('.json') && (!filter || f.includes(filter)))
+    .sort()
+    .reverse();
+}
+
 async function rest(path, { method = 'GET', body, timeout = 15000 } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -206,6 +256,30 @@ const commands = {
     out(await ws(JSON.parse(raw)));
   },
 
+  async backups() {
+    const files = listBackups(args[0] || '');
+    if (!files.length) return console.log('No backups yet.');
+    for (const f of files.slice(0, Number(flags.limit || 40))) {
+      let note = '';
+      try {
+        const s = JSON.parse(readFileSync(join(BACKUP_DIR, f), 'utf8'));
+        note = `${s.reason}${s.existed ? '' : ' (did not exist)'}${s.body?.alias ? ` :: ${s.body.alias}` : ''}`;
+      } catch {}
+      console.log(`${pad(f, 56)} ${note}`);
+    }
+    if (files.length > Number(flags.limit || 40)) console.log(`... and ${files.length - Number(flags.limit || 40)} older.`);
+  },
+
+  async restore() {
+    const kind = args.shift();
+    if (!['automation', 'script', 'scene'].includes(kind)) {
+      die('usage: ha restore <automation|script|scene> <id> [--file <path>]');
+    }
+    args.unshift('restore');
+    // configObject reads verb from args[0] and id from args[1].
+    return configObject(kind);
+  },
+
   async areas() { out(await ws({ type: 'config/area_registry/list' })); },
   async devices() { out(await ws({ type: 'config/device_registry/list' })); },
   async labels() { out(await ws({ type: 'config/label_registry/list' })); },
@@ -247,18 +321,54 @@ async function configObject(kind) {
   if (verb === 'put') {
     if (!id) die(`usage: ha ${kind} put <id> --body '<json>'   (or pipe JSON on stdin)`);
     const body = flags.body ? JSON.parse(flags.body) : JSON.parse(await readStdin());
+
+    let saved = null;
+    if (!flags['no-backup']) saved = await snapshot(kind, id, 'overwrite');
+
     const r = await rest(`/api/config/${kind}/config/${encodeURIComponent(id)}`, { method: 'POST', body });
     out(r ?? { ok: true });
+    if (saved) {
+      console.error(saved.existed
+        ? `Backed up the previous version to ${saved.file}`
+        : `${kind}.${id} is new; recorded a tombstone at ${saved.file}`);
+    }
     console.error(`Saved ${kind}.${id}. Reload it with: ha call ${kind}.reload`);
     return;
   }
 
   if (verb === 'delete') {
     if (!id) die(`usage: ha ${kind} delete <id>`);
-    return out(await rest(`/api/config/${kind}/config/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+    let saved = null;
+    if (!flags['no-backup']) saved = await snapshot(kind, id, 'delete');
+    const r = await rest(`/api/config/${kind}/config/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    out(r ?? { ok: true });
+    if (saved?.existed) console.error(`Backed up to ${saved.file} - restore with: ha restore ${kind} ${id}`);
+    return;
   }
 
-  die(`usage: ha ${kind} <list|get|put|delete> [id]`);
+  if (verb === 'restore') {
+    if (!id) die(`usage: ha ${kind} restore <id> [--file <path>]`);
+    const file = flags.file || (() => {
+      const hit = listBackups(`${kind}.${id}.`)[0];
+      if (!hit) die(`No backup found for ${kind}.${id}. See: ha backups`);
+      return join(BACKUP_DIR, hit);
+    })();
+
+    const snap = JSON.parse(readFileSync(file, 'utf8'));
+    if (!snap.existed) {
+      // The object did not exist when we took the snapshot, so restoring that
+      // moment means removing it again.
+      await rest(`/api/config/${kind}/config/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+      console.error(`${kind}.${id} did not exist at that point, so it has been removed again.`);
+    } else {
+      await rest(`/api/config/${kind}/config/${encodeURIComponent(id)}`, { method: 'POST', body: snap.body });
+      console.error(`Restored ${kind}.${id} from ${snap.savedAt}.`);
+    }
+    console.error(`Reload it with: ha call ${kind}.reload`);
+    return;
+  }
+
+  die(`usage: ha ${kind} <list|get|put|delete|restore> [id]`);
 }
 
 function readStdin() {
@@ -280,14 +390,21 @@ const USAGE = `ha -- Home Assistant control
   ha services [domain]            what services exist
   ha logs [--lines N]             tail the HA error log
 
-  ha automation <list|get|put|delete> [id] [--body JSON]
-  ha script     <list|get|put|delete> [id] [--body JSON]
-  ha scene      <list|get|put|delete> [id] [--body JSON]
+  ha automation <list|get|put|delete|restore> [id] [--body JSON]
+  ha script     <list|get|put|delete|restore> [id] [--body JSON]
+  ha scene      <list|get|put|delete|restore> [id] [--body JSON]
+
+  ha backups [filter]             what has been backed up, newest first
+  ha restore <kind> <id> [--file] roll one object back
 
   ha areas | ha devices | ha labels
   ha ws '<json command>'          raw websocket command
 
-Reads summarise by default. Pass --json for the raw payload.`;
+Reads summarise by default; pass --json for the raw payload.
+
+Every put and delete snapshots the object first, into data/backups/. That is
+the only rollback that exists -- Home Assistant keeps no history of its own.
+--no-backup skips it and is not something to reach for casually.`;
 
 const cmd = args.shift();
 if (!cmd || cmd === 'help' || flags.help) { console.log(USAGE); process.exit(0); }

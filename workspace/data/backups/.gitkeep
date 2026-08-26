@@ -1,0 +1,2 @@
+# Automatic snapshots land here before any config write.
+# Safe to prune old files; keep this directory.

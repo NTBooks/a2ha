@@ -1,0 +1,5 @@
+# The agent container is Linux. Keep everything LF in the repo regardless of
+# what the authoring machine does.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

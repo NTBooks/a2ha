@@ -1,0 +1,54 @@
+{
+  "$schema": "https://agents.pinata.cloud/schemas/manifest.v1.json",
+  "version": 1,
+  "engine": "hermes",
+
+  "agent": {
+    "name": "A2HA",
+    "description": "Assistant TO the Home Assistant. Runs your house from chat - reads state, calls services, writes automations and scripts - and hands guests a locked-down button pad through a link that expires when you say so. Guests get big buttons and nothing else: no entity names, no free text, no access to the rest of your house.",
+    "vibe": "assistant TO the Home Assistant, thank you",
+    "emoji": "🏠"
+  },
+
+  "template": {
+    "slug": "a2ha",
+    "category": "general",
+    "tags": ["home-assistant", "smart-home", "speed-dial", "guest-access", "automation", "hermes"],
+    "authorName": "NTBooks"
+  },
+
+  "secrets": [
+    {
+      "name": "HA_BASE_URL",
+      "description": "Public https URL of your Home Assistant - Cloudflare Tunnel, DuckDNS, or Nabu Casa. No trailing slash. Example: https://ha.example.com",
+      "required": true
+    },
+    {
+      "name": "HA_TOKEN",
+      "description": "Home Assistant long-lived access token. In HA: profile (bottom left) -> Security -> Long-lived access tokens -> Create token. Use a dedicated admin user so you can revoke it independently.",
+      "required": true
+    },
+    {
+      "name": "HA_AGENT_ID",
+      "description": "Optional. Home Assistant Assist agent id, used only by pad buttons that fire a spoken phrase instead of a service call. Leave blank for HA's default agent.",
+      "required": false
+    },
+    {
+      "name": "PUBLIC_BASE_URL",
+      "description": "Optional. Overrides the guest link base URL. Normally left blank - the agent derives https://$AGENT_ID.agents.pinata.cloud/pad automatically. Set this only if you have pointed a custom domain at the /pad route.",
+      "required": false
+    }
+  ],
+
+  "scripts": {
+    "build": "cd workspace/projects/speeddial && npm ci --omit=dev",
+    "start": "cd workspace/projects/speeddial && node src/index.js"
+  },
+
+  "routes": [
+    { "port": 4321, "path": "/pad",   "protected": false },
+    { "port": 4322, "path": "/admin", "protected": true }
+  ],
+
+  "tasks": []
+}

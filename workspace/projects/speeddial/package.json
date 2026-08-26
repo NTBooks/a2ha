@@ -1,0 +1,16 @@
+{
+  "name": "a2ha-speeddial",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Guest pad server + config app for the A2HA Pinata agent.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

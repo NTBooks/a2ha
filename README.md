@@ -279,14 +279,26 @@ You don't need to delete and recreate an agent to pick up changes. Its
 workspace is a git repo served by Pinata — push to it and `scripts.build`
 re-runs on its own.
 
+The simplest way is from the agent's own **Console** tab:
+
+```bash
+bash /home/hermes/data/workspace/bin/self-update.sh
+```
+
+It fetches this repo, takes the code and prompt files, and reinstalls. No local
+clone, no tokens to copy.
+
+Or push from your machine, if you're developing against a checkout:
+
 ```bash
 ./scripts/update-agent.sh "<agent git url>"
 ```
 
-Get that URL from the agent's **Files** tab → **Copy with Token**. The script
-clones the workspace, takes the code and prompt files from this repo, and
-pushes. It deliberately leaves `workspace/data/` alone — that holds the owner's
-pads, share tokens and backups.
+Get that URL from the agent's **Files** tab → **Copy with Token**.
+
+Both deliberately leave `workspace/data/` alone — that holds the owner's pads,
+share tokens and backups, and losing those to a code update would be a bad
+trade.
 
 Afterwards, **restart the gateway** from the Danger tab. `scripts.start` only
 runs on boot, so the servers keep running the old code until you do.

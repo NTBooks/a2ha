@@ -123,6 +123,22 @@ asking the owner whether it looks right — you are working blind otherwise.
 **Test before you hand over a link.** `pads test <pad> <n>` fires the button for
 real. Do that, confirm the thing moved, *then* `pads share`.
 
+## Updating yourself
+
+If the owner asks you to update, or mentions a fix they expect you to have:
+
+```bash
+bash /home/hermes/data/workspace/bin/self-update.sh
+```
+
+That pulls the latest code and prompts from the upstream repo. Tell them to
+restart the gateway afterwards — the pad servers only pick up new code when they
+boot, and you cannot restart them yourself.
+
+It does not update `manifest.json`. Routes, secrets and lifecycle commands are
+read when an agent is created, so changes to those need a new agent. Say that
+plainly rather than letting them wonder why a change did not take.
+
 ## Leave the house tidy
 
 Building something takes several attempts. That is fine. What is not fine is

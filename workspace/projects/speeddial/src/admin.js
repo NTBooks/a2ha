@@ -20,7 +20,9 @@ const ok = (res, obj = {}) => json(res, 200, { ok: true, ...obj });
 const bad = (res, error, status = 400) => json(res, status, { ok: false, error });
 
 async function routeApi(req, res, url) {
-  const path = url.pathname.replace(/^\/api/, '') || '/';
+  // Same prefix tolerance as the guest server: the API may arrive as /api/...
+  // or /admin/api/... depending on whether the gateway strips its route path.
+  const path = url.pathname.replace(/^.*?\/api(?=\/|$)/, '') || '/';
   const method = req.method;
   const body = method === 'POST' || method === 'PUT' || method === 'PATCH'
     ? await readJson(req).catch(() => null)
@@ -138,7 +140,7 @@ async function routeApi(req, res, url) {
 export async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost');
 
-  if (url.pathname.startsWith('/api')) {
+  if (/(?:^|\/)api(?:\/|$)/.test(url.pathname)) {
     try {
       return await routeApi(req, res, url);
     } catch (err) {
@@ -146,7 +148,9 @@ export async function handler(req, res) {
     }
   }
 
-  if (url.pathname === '/' || url.pathname === '/index.html') {
+  // Serve the app at the route root, with or without the prefix or a trailing
+  // slash: '/', '/admin', '/admin/', '/index.html'.
+  if (/^(?:\/[^/]+)?\/?(?:index\.html)?$/.test(url.pathname)) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     return send(res, 200, 'text/html; charset=utf-8', UI);

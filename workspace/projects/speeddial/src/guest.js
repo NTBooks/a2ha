@@ -265,7 +265,11 @@ export async function fire(req, res, token) {
 
 export function handler(req, res) {
   const url = new URL(req.url, 'http://localhost');
-  const m = /^\/r\/([^/]+?)(\/fire)?\/?$/.exec(url.pathname);
+  // Match /r/<token> whether or not the gateway kept its route prefix. The
+  // docs say the prefix is stripped; a real deployment showed it is not, and
+  // the manifest's own note about setting Vite's base hints the same. Tolerate
+  // both rather than betting on either.
+  const m = /(?:^|\/)r\/([^/]+?)(\/fire)?\/?$/.exec(url.pathname);
   if (!m) return notFound(res);
 
   const token = decodeURIComponent(m[1]);

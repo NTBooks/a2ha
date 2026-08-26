@@ -1,250 +1,270 @@
 # A2HA — Assistant to the Home Assistant
 
-A Pinata agent that runs your house from chat, and hands guests a locked-down
-pad of buttons through a link that expires when you say so.
+Not the Assistant Home Assistant. That's a different and frankly less
+prestigious role, and the distinction matters to this agent more than it does
+to anyone else.
 
-Two halves, one agent:
+A2HA is a [Pinata](https://agents.pinata.cloud) agent that does two things for
+a Home Assistant house: it hands guests a strictly limited set of buttons for
+exactly as long as they're staying, and it does the fiddly configuration work
+you keep putting off.
 
-**Talk to your house.** Ask what's on, turn things off, write an automation.
-The agent holds a Home Assistant long-lived token and can read state, call
-services, and create or edit automations, scripts, scenes and helpers.
+---
 
-**Hand out a pad.** Build a named set of numbered buttons — "porch light",
-"living room lamp", "movie night" — and mint a link to it. Whoever opens the
-link gets big buttons and nothing else. No account, no app, no access to the
-rest of your house.
+## The problem it actually solves
 
-The pad idea is lifted from the speed dial feature in
-[Fanad](https://fanad.org), where it earned its keep.
+Someone is staying at your place for a week. They need the porch light, the
+guest room lamp, and the coffee machine.
 
-## Why the pad is safe
+Your options today are all bad. Make them a Home Assistant account and they can
+see every camera, every door lock and every sensor in the house — and you have
+to remember to delete it afterwards. Hand them your phone. Or leave a note and
+hope.
 
-The security property is narrow and worth stating exactly: **a guest only ever
-transmits a button number.** Nothing a guest types reaches Home Assistant,
-because there is nothing to type.
+A2HA gives you a third option: **a link.**
 
-Concretely, the guest page contains the button numbers and the labels you wrote
-and nothing else — no entity ids, no service names, no on/off state, no other
-pad. It's `noindex` and `no-store`, and loading it fires nothing, so a chat app
-generating a link preview can't turn on your lights. Share tokens are stored as
-a SHA-256 hash, so the link is shown to you once and cannot be recovered from
-the agent afterwards. Expiry and revocation are checked on every single request,
-not just at page load, so revoking kills a link on the guest's next tap.
+```
+you:   make a pad for the house-sitter with the porch light,
+       the guest room lamp and the coffee machine
 
-There's also no LLM in the fire path. A button press is `token → slot lookup →
-Home Assistant REST call`. That makes presses deterministic, fast, and free —
-a house-sitter mashing buttons for a week costs no tokens at all. The model is
-only involved when *you* talk to the agent.
+a2ha:  Done — three buttons. I tested all three, they actually moved.
+       Want a link? I'd go 7 days.
+
+you:   yeah, they arrive Friday
+
+a2ha:  https://your-agent.agents.pinata.cloud/pad/r/a2h1_…
+       Porch light, Guest room lamp, Coffee machine. Dies next Sunday.
+       Copy it now — I can't show it again.
+```
+
+They open it on their phone. Three big buttons. No app, no account, no login.
+When the link expires it stops working, and you can kill it earlier from chat
+in about four seconds.
+
+### What a guest can and cannot see
+
+Worth being precise about, because "limited access" is easy to claim and easy
+to get wrong.
+
+**A guest only ever transmits a button number.** There is no text field. There
+is nothing to type. Nothing a guest sends becomes an instruction to your house —
+the number selects from actions *you* defined, and that is the entire protocol.
+
+The page they load contains the button numbers and the labels you wrote. That's
+it. No entity IDs, no service names, no other pads, no way to enumerate
+anything, and — deliberately — no on/off state, because the agent doesn't read
+your house back and a stale "ON" badge is worse than no badge at all.
+
+Some smaller decisions that matter more than they look:
+
+- **Loading the page fires nothing.** Chat apps fetch links to build previews.
+  If `GET` had side effects, pasting a link into a group chat would turn on
+  your lights.
+- **Links are stored as a hash.** You see the URL once. Nobody — including the
+  agent, including anyone who reads its files — can recover it afterwards.
+- **Expiry and revocation are checked on every request**, not at page load. Kill
+  a link and it dies on the guest's very next tap, mid-visit, instantly.
+- **A dead link says so politely.** Expired or revoked returns a plain "this
+  link isn't active" page rather than a 404 — a forwarded dead link shouldn't
+  look alarming, and shouldn't confirm to a prober that a real-shaped token
+  missed.
+- **Rate limited per link**, so a bored houseguest can't machine-gun your
+  switches.
+
+Pads are cheap. Make one per visitor, or one per situation — the party planning
+committee gets the speakers and nothing else, the temp gets the front lamp for
+one afternoon, the neighbour watering your plants gets the garage light for the
+fortnight you're away.
+
+---
+
+## The other half: the boring work, done quickly
+
+The second thing A2HA is for is everything you'd otherwise do by clicking
+around Home Assistant for an hour.
+
+**Dashboards.** Building a panel by hand is a long afternoon of dragging cards.
+Ask instead:
+
+> "Build a conference room dashboard — the projector, the lights, the blinds
+> and the temperature. Make it my home screen."
+
+It reads what's actually in the room, writes the layout, and points the kiosk at
+it. It knows which card types your install genuinely renders — including custom
+ones from HACS — and refuses to invent ones that don't exist.
+
+**Automations, scripts and scenes.** Written through Home Assistant's config
+API, so they appear in the UI editor like anything else:
+
+> "When the last person leaves, turn off the warehouse lights and set the
+> thermostat back."
+
+**Tidying up.** The thing nobody ever gets to. Ask what's unavailable, what's
+duplicated, what's named badly, what hasn't reported in a month — then have it
+fix them.
+
+**The small stuff that's disproportionately annoying.** Adding a weather card.
+Creating helpers. Renaming forty entities that arrived from an integration
+called things like `sensor.0x847127fffe_battery`. Working out which automation
+is firing at 3am.
+
+Everything destructive is snapshotted first, with a one-command undo. It won't
+delete anything without telling you what's being lost.
+
+---
+
+## Deliberately out of scope
+
+A short list, because a tool that's honest about its edges is easier to trust.
+
+- **It can't change what dashboard *your* login sees.** Home Assistant stores
+  that per user, and the agent can only set its own — which is the account a
+  wall kiosk uses, so that's usually the one you want. Your phone stays yours.
+- **It can't install integrations or add-ons.**
+- **It doesn't watch your house.** It looks when you ask. No streaming, no live
+  alerts, no sitting there observing.
+- **Guest pads are buttons, not dashboards.** No sliders, no readouts, no
+  state. That constraint *is* the security model, not an oversight.
+- **Editing YAML is opt-in** and needs an extra add-on. Off by default, because
+  a bad `configuration.yaml` stops Home Assistant from starting.
+
+---
 
 ## Setup
 
-### 1. Decide how the agent reaches Home Assistant
+Two ways to run this, depending on how you feel about exposing Home Assistant.
 
-The agent runs in Pinata's cloud, not on your LAN. Two ways to bridge that.
+### Path 1 — Hosted, free tier
 
-**Tailscale (recommended).** The agent joins your tailnet and Home Assistant
-never gets a public URL at all. Set `TS_AUTHKEY` and the agent brings up
-Tailscale on boot; `HA_BASE_URL` then points at a tailnet address.
+Deploy on [Pinata](https://agents.pinata.cloud) and pick **Free tier** in the
+Create Agent wizard. It runs on OpenRouter's shared pool: no API key, no card,
+no LLM bill. It's slower and works within a smaller context — the prompt files
+here are written to stay inside it — and you can attach your own Anthropic or
+OpenAI key later without recreating the agent.
 
-Get Home Assistant onto your tailnet first, whichever fits:
-
-- *Home Assistant OS* — install the **Tailscale add-on** (Settings → Add-ons →
-  Add-on Store → Tailscale). HA gets its own node and MagicDNS name, so
-  `HA_BASE_URL=http://homeassistant.your-tailnet.ts.net:8123`. This is the
-  cleanest option: nothing else on your LAN becomes reachable.
-- *HA behind another Tailscale machine* (e.g. a Proxmox host running HA in a
-  VM) — make that machine a **subnet router**:
-  `tailscale up --advertise-routes=192.168.1.0/24`, then approve the route in
-  the [admin console](https://login.tailscale.com/admin/machines). The agent
-  runs with `--accept-routes`, so `HA_BASE_URL=http://192.168.1.50:8123` then
-  works. Note this exposes the whole advertised subnet to your tailnet, so
-  prefer the add-on if HA can run one.
-
-Generate the auth key at
-[Settings → Keys](https://login.tailscale.com/admin/settings/keys). Mark it
-**Reusable** and **Ephemeral** — the agent registers a throwaway node on each
-boot and Tailscale reaps the old one, so no node key ever has to be persisted
-into the workspace.
-
-**Public URL.** Nabu Casa, Cloudflare Tunnel, DuckDNS — anything giving HA a
-public HTTPS hostname. Leave `TS_AUTHKEY` blank and point `HA_BASE_URL` at it.
-If you go through a proxy or tunnel, set `trusted_proxies` in your HA
-`configuration.yaml` or every API call comes back 400.
-
-### 2. Make a token
-
-In Home Assistant: profile (bottom left) → **Security** → **Long-lived access
-tokens** → **Create token**.
-
-Use a **dedicated admin user** for this, not your own account. The agent needs
-admin rights to write automations, and a separate user means you can revoke it
-without disturbing your own sessions.
-
-### 3. Create the agent
-
-Point Pinata at this repo, then attach the secrets:
+Home Assistant needs to be reachable from the internet: **Nabu Casa**, a
+**Cloudflare Tunnel**, or DuckDNS all work.
 
 | Secret | Required | What it is |
 |---|:--:|---|
-| `HA_BASE_URL` | yes | tailnet address or public URL — no trailing slash |
-| `HA_TOKEN` | yes | the long-lived token from step 2 |
+| `HA_BASE_URL` | yes | `https://your-ha-host` — no trailing slash |
+| `HA_TOKEN` | yes | long-lived token from a **dedicated** admin user |
+
+Behind a tunnel, set `trusted_proxies` in your HA `configuration.yaml` or every
+API call comes back 400.
+
+### Path 2 — Private, over Tailscale
+
+Home Assistant gets **no public URL at all.** The agent joins your tailnet on
+boot and reaches HA over WireGuard.
+
+1. Put HA on your tailnet — the **Tailscale add-on** is cleanest, giving HA its
+   own node and a MagicDNS name. If HA runs as a VM behind another Tailscale
+   machine, make that machine a subnet router with `--advertise-routes` and
+   approve the route.
+2. Generate an auth key at
+   [Tailscale → Keys](https://login.tailscale.com/admin/settings/keys). Mark it
+   **Reusable** *and* **Ephemeral**.
+3. Set `TS_AUTHKEY` and point `HA_BASE_URL` at the tailnet address:
+   `http://homeassistant.your-tailnet.ts.net:8123` — `http`, not `https`.
+   WireGuard already encrypts it, and forwarding TLS to loopback breaks
+   certificate validation.
+
+| Secret | Required | What it is |
+|---|:--:|---|
 | `TS_AUTHKEY` | no | Tailscale auth key — reusable + ephemeral |
 | `TS_HOSTNAME` | no | what the agent is called in your tailnet (default `a2ha`) |
-| `HA_AGENT_ID` | no | a specific HA Assist agent, for `--say` buttons |
-| `HA_FILES_URL` | no | enables YAML editing — see below |
-| `HA_FILES_USER` | no | File editor add-on username |
-| `HA_FILES_PASSWORD` | no | File editor add-on password |
+| `HA_AGENT_ID` | no | a specific HA Assist agent, for spoken-phrase buttons |
 | `PUBLIC_BASE_URL` | no | only if you point a custom domain at the `/pad` route |
 
-You'll also pick an LLM provider in the create wizard — your own Anthropic /
-OpenAI / OpenRouter key, Pinata's hosted inference, or the free tier. The free
-tier works; the prompt files are written to stay inside a small context.
+Guest links still work from anywhere — the guest is on the public internet while
+your Home Assistant never is.
 
-Then connect Telegram (or Discord or Slack) in the Pinata dashboard.
+### Make the token properly
 
-### 4. Say hello
+Create a **dedicated admin user** in Home Assistant, log in as that user, then
+profile → **Security** → **Long-lived access tokens**.
 
+Turn **"Local access only" off** for that user. Tailscale addresses live in
+`100.64.0.0/10`, which Home Assistant does not count as local, so leaving it on
+rejects the agent with a bare 401 and no explanation.
+
+A separate user also means you can revoke the agent without touching your own
+sessions, and the logbook shows which changes were the agent's.
+
+### Then
+
+Connect **Telegram** (or Discord or Slack) on the agent's Channels tab — and set
+the DM policy to **pairing**, not open. This bot has admin control of a house.
+
+Finally, in the agent's Console:
+
+```bash
+node /home/hermes/data/workspace/bin/ha.mjs doctor
 ```
-you:  what lights are on?
-a2ha: Three. Kitchen, hall, and the good lamp in the living room.
 
-you:  make a pad for the dog sitter with the porch light and the kitchen
-a2ha: Done — two buttons. I tested both, they actually moved.
-      Want a link? I'd go 3 days.
+Every line should read `ok`. It checks the REST API, the state machine,
+templates, the automation config endpoint, WebSocket auth, and which network
+path is live — so a broken piece names itself instead of surfacing later as a
+mystery.
 
-you:  yeah, 3 days
-a2ha: https://<your-agent>.agents.pinata.cloud/pad/r/a2h1_...
-      Porch light and Kitchen. Dies Thursday. Copy it now, I can't show it again.
-```
+---
 
 ## The two URLs
 
 Both come from `routes` in `manifest.json`:
 
-- **`/pad`** — public. Guest pads. Anyone with a valid link can use it; that's
-  the point. Anyone without one gets a polite "this link isn't active".
-- **`/admin`** — protected by Pinata's gateway. A config app for building pads
-  by hand if you'd rather click than type. Same thing the agent does, same API.
+- **`/pad`** — public by design. Guest pads live here. Anyone with a valid link
+  can use it; anyone without gets a polite notice.
+- **`/admin`** — behind Pinata's gateway token. A config app for building pads
+  by hand, if you'd rather click than type. Same API the agent uses.
+
+---
 
 ## How it's built
 
-No dependencies. The whole thing is Node's standard library, so `npm ci` pulls
-nothing and there's no build step to rot.
+**No runtime dependencies.** The whole app is Node's standard library, so
+`npm ci` installs nothing and there's no build step to rot in two years.
 
 ```
-manifest.json                     deployment contract
-SOUL.md                           personality
+manifest.json                deployment contract
+SOUL.md                      personality
 workspace/
-  setup.sh                        build: install Tailscale
-  start.sh                        boot: join tailnet, then serve
-  AGENTS.md                       how the agent works
-  HA.md                           Home Assistant playbook
-  PADS.md                         guest pad playbook
-  bin/ha.mjs                      Home Assistant CLI (REST + WebSocket)
-  bin/pads.mjs                    pads and links CLI
-  bin/proxy.mjs                   points the CLIs at the tailnet forwarder
-  bin/tsforward.mjs               TCP forwarder: loopback -> tailnet via SOCKS5
-  data/                           pads.json, shares.json, state.json
-  data/backups/                   automatic snapshots before every config write
-  projects/speeddial/             the two servers
+  setup.sh / start.sh        install Tailscale, join tailnet, serve
+  AGENTS.md                  how the agent works
+  HA.md                      Home Assistant playbook
+  PADS.md                    guest pad playbook
+  bin/ha.mjs                 Home Assistant CLI (REST + WebSocket)
+  bin/pads.mjs               pads and links CLI
+  bin/tsforward.mjs          TCP forwarder: loopback -> tailnet via SOCKS5
+  data/                      pads, shares, and automatic backups
+  projects/speeddial/        the guest and admin servers
 ```
 
-The config server is the **only writer** of `data/`. The agent manages pads by
-calling that server over loopback rather than editing JSON, so the web app and
-the agent can't race each other.
+**No LLM in the guest path.** A button press is `token -> slot lookup -> Home
+Assistant call`. That makes presses deterministic, fast and free — a house-sitter
+pressing buttons all week costs nothing. The model is only involved when *you*
+talk to the agent.
+
+**Everything destructive is snapshotted.** Automations, scripts, scenes,
+dashboards, helpers and config files are all backed up before being changed, and
+`ha backups` / `ha restore` bring them back. Home Assistant keeps no history of
+its own, so this is the only undo that exists.
 
 ### Editing YAML (optional)
 
 Off by default. Home Assistant has no file API, so this needs the **File
-editor** add-on with a host port exposed:
+editor** add-on with a host port exposed on 3218. Set `HA_FILES_URL`,
+`HA_FILES_USER` and `HA_FILES_PASSWORD` and `ha file` lights up.
 
-1. Install the *File editor* add-on.
-2. Configuration tab → Network → give port **3218** a host port. Options → set
-   a username and password.
-3. Start it, then set `HA_FILES_URL` (e.g.
-   `http://homeassistant.your-tailnet.ts.net:3218`), `HA_FILES_USER` and
-   `HA_FILES_PASSWORD` on the agent.
+Writes are **validated and rolled back**. After each write the agent asks Home
+Assistant whether the configuration is still valid; if not, the previous
+contents go straight back and you get the error. A broken `configuration.yaml`
+means HA won't start, and you'd usually find out at your next reboot rather than
+at the moment of the edit.
 
-```bash
-node workspace/bin/ha.mjs file read configuration.yaml
-node workspace/bin/ha.mjs file write configuration.yaml --body '<text>'
-```
-
-**Writes are validated and rolled back if they break the config.** After each
-write the agent asks Home Assistant whether the configuration is still valid; if
-not, the previous contents go back and you get the error. A broken
-`configuration.yaml` stops HA from starting, and you'd usually find out at the
-next reboot rather than at the moment of the edit.
-
-Access is confined to `/config`, and `..` is refused.
-
-Studio Code Server is the nicer editor for a person, but it speaks the VS Code
-server protocol rather than a REST API, so it can't be driven this way. File
-editor is the one with an actual API.
-
-Only expose that port on a network you trust — over the tailnet or your LAN. It
-sits outside Home Assistant's own login.
-
-### Backups
-
-Every config write snapshots the object first, into `workspace/data/backups/`.
-Home Assistant keeps no history of its own, so this is the only undo that
-exists.
-
-```bash
-node workspace/bin/ha.mjs backups
-node workspace/bin/ha.mjs restore automation porch_dusk
-```
-
-If the current value can't be read, the write is **refused** rather than
-performed without a rollback. Creating something new records a tombstone, so
-restoring it removes the object again instead of resurrecting a version that
-never existed. Deleting a pad snapshots it too.
-
-Backups are plain JSON and accumulate; prune the directory when it gets old.
-
-### How the Tailscale path works
-
-A sandboxed container has no `/dev/net/tun` and no `CAP_NET_ADMIN`, so a normal
-`tailscaled` cannot run. Instead it runs in **userspace networking** mode, which
-keeps the network stack in-process and exposes a SOCKS5 server.
-
-`start.sh` then runs `bin/tsforward.mjs`, a small TCP forwarder that makes Home
-Assistant reachable at `http://127.0.0.1:18123` by tunnelling each connection
-through that SOCKS5 server. Everything else just talks to loopback.
-
-Forwarding at the TCP layer is deliberate. The obvious alternative — setting
-`HTTP_PROXY` — needs a Node new enough to support `--use-env-proxy`, and a real
-deployment turned out to run one without it (`node: bad option:
---use-env-proxy`), which broke every command rather than degrading. A TCP
-forwarder asks nothing of Node: no flags, no version floor, and it behaves
-identically for `fetch`, WebSocket and `curl`.
-
-MagicDNS names are resolved on the Tailscale side of the tunnel, so
-`http://homeassistant.your-tailnet.ts.net:8123` works with no DNS setup in the
-container.
-
-Use `http`, not `https`, for a tailnet `HA_BASE_URL`. Forwarding presents the
-certificate against `127.0.0.1` and validation fails; WireGuard already
-encrypts the link, so plain HTTP over a tailnet is not a downgrade. `start.sh`
-warns and skips forwarding if it sees `https`.
-
-`ha doctor` reports which path is in use, so you never have to guess whether
-you're on the tailnet or a public URL.
-
-### Health check
-
-```bash
-node workspace/bin/ha.mjs doctor
-```
-
-Probes every surface the agent depends on — REST, templates, the automation
-config API, and WebSocket auth — and names whichever one is broken.
-
-Two of those are undocumented: `/api/config/automation/config/<id>` is what the
-HA UI editor uses but isn't in Home Assistant's published REST reference, and
-the registry commands (helpers, areas, labels) are WebSocket-only. They work on
-current builds. `doctor` is how you find out if yours is the exception.
+Access is confined to `/config`, and `..` is refused. Only expose that port on a
+network you trust — it sits outside Home Assistant's own login.
 
 ### Tests
 
@@ -252,10 +272,12 @@ current builds. `doctor` is how you find out if yours is the exception.
 cd workspace/projects/speeddial && npm test
 ```
 
-26 tests, fully offline — no Home Assistant and no network needed. They pin the
-invariants that make a share link safe to text to someone: hash-only token
-storage, expiry and revocation, what the guest view is allowed to contain, and
-the fact that an unrecognised action shape never reaches Home Assistant.
+26 tests, fully offline. They pin the things that make a share link safe to text
+to someone: hash-only token storage, expiry and revocation, exactly what the
+guest view may contain, and the fact that an unrecognised action never reaches
+Home Assistant.
+
+---
 
 ## Things worth knowing
 
@@ -263,18 +285,20 @@ the fact that an unrecognised action shape never reaches Home Assistant.
 A pad link is a URL with no identity behind it, and URLs get forwarded.
 
 **A "never expires" link is a real commitment.** Fine for a housemate, bad for a
-one-off visitor. Revocation is the off switch and it's immediate.
+weekend visitor. Revocation is immediate, but you have to remember to do it.
 
-**Toggle state is a guess.** The agent records what it last *sent* to a toggle
-button; it never reads Home Assistant back to check. That's why no on/off state
-is ever shown to anyone — a stale badge is worse than no badge.
+**Toggle state is a guess.** The agent records what it last *sent*; it never
+reads Home Assistant back to check. That's why no on/off state is ever shown to
+anyone.
 
-## License
+**The build downloads Tailscale** (~30MB from `pkgs.tailscale.com`) if you use
+that path.
 
-MIT. See [LICENSE](LICENSE).
+---
 
 ## Credits
 
-The speed dial idea, and most of the invariants above, come from
-[Fanad](https://fanad.org). Built as a
-[Pinata agent template](https://docs.pinata.cloud/agents/overview).
+The guest pad idea is lifted from the speed dial feature in
+[Fanad](https://fanad.org), where it earned its keep.
+
+MIT licensed — see [LICENSE](LICENSE).

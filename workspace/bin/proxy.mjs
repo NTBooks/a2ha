@@ -36,15 +36,31 @@ export function applyProxy() {
 
   if (!loaded || !process.env.HTTP_PROXY) return;
 
-  // Already running with the flag, from NODE_OPTIONS or an earlier re-exec.
-  const active = process.execArgv.includes('--use-env-proxy')
-    || (process.env.NODE_OPTIONS || '').includes('--use-env-proxy');
-  if (active) return;
+  // Already re-exec'd, or the flag was passed directly.
+  if (process.execArgv.includes('--use-env-proxy')) return;
+
+  // The flag must go in argv, NOT in NODE_OPTIONS. Some Node builds reject it
+  // there outright ("--use-env-proxy is not allowed in NODE_OPTIONS", exit 9),
+  // which would break every command instead of just the proxying. Scrub it from
+  // an inherited NODE_OPTIONS for the same reason.
+  const env = { ...process.env };
+  if (env.NODE_OPTIONS?.includes('--use-env-proxy')) {
+    env.NODE_OPTIONS = env.NODE_OPTIONS.replace(/--use-env-proxy/g, '').replace(/\s+/g, ' ').trim();
+    if (!env.NODE_OPTIONS) delete env.NODE_OPTIONS;
+  }
+
+  const probe = spawnSync(process.execPath, ['--use-env-proxy', '-e', ''], { stdio: 'ignore', env });
+  if (probe.status !== 0) {
+    console.error('This Node build does not support --use-env-proxy, so it cannot reach');
+    console.error('Home Assistant over the tailnet. Point HA_BASE_URL at a directly');
+    console.error('reachable URL, or remove TS_AUTHKEY and restart the agent.');
+    process.exit(3);
+  }
 
   const r = spawnSync(
     process.execPath,
     ['--use-env-proxy', ...process.argv.slice(1)],
-    { stdio: 'inherit', env: { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --use-env-proxy`.trim() } },
+    { stdio: 'inherit', env },
   );
   process.exit(r.status ?? 1);
 }

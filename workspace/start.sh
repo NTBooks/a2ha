@@ -73,9 +73,19 @@ if start_tailscale; then
   export HTTPS_PROXY="http://localhost:$PROXY_PORT"
   export NO_PROXY="localhost,127.0.0.1,::1"
   export TS_PROXY_URL="$HTTP_PROXY"
-  # Node's fetch ignores HTTP_PROXY unless asked. Verified on Node 24.
-  export NODE_OPTIONS="${NODE_OPTIONS:-} --use-env-proxy"
-  echo "[start] outbound HTTP routed through the tailnet"
+  # Node's fetch ignores HTTP_PROXY unless asked. The flag must be passed as a
+  # real argument: some Node builds refuse it inside NODE_OPTIONS ("--use-env-proxy
+  # is not allowed in NODE_OPTIONS", exit 9), which would take the pad servers
+  # down along with the proxying.
+  if node --use-env-proxy -e '' 2>/dev/null; then
+    NODE_PROXY_FLAG="--use-env-proxy"
+    echo "[start] outbound HTTP routed through the tailnet"
+  else
+    NODE_PROXY_FLAG=""
+    echo "[start] WARNING: this Node does not support --use-env-proxy, so it"
+    echo "[start] cannot reach Home Assistant over the tailnet. Point HA_BASE_URL"
+    echo "[start] at a directly reachable URL, or unset TS_AUTHKEY."
+  fi
 
   # Leave a marker so `ha` and `pads` pick the proxy up in the agent's own
   # shells, which do not inherit this script's environment.
@@ -85,9 +95,11 @@ HTTPS_PROXY=$HTTPS_PROXY
 NO_PROXY=$NO_PROXY
 EOF
 else
+  NODE_PROXY_FLAG=""
   rm -f "$WORKSPACE/.tailscale-env"
 fi
 
 echo "[start] starting pad servers"
 cd "$WORKSPACE/projects/speeddial"
-exec node src/index.js
+# shellcheck disable=SC2086 -- deliberately unquoted so an empty flag vanishes.
+exec node $NODE_PROXY_FLAG src/index.js

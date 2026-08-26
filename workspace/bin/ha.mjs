@@ -211,7 +211,9 @@ const commands = {
         const d = s.entity_id.split('.')[0];
         byDomain[d] = (byDomain[d] || 0) + 1;
       }
-      console.log(`${all.length} entities. Pass a filter to list them, e.g. "ha states light".\n`);
+      console.log(`${all.length} entities. Pass a filter to list them, e.g. "ha states light".`);
+      console.log('Dashboards, areas, helpers and labels are NOT entities - see "ha help".');
+      console.log('');
       for (const [d, n] of Object.entries(byDomain).sort((a, b) => b[1] - a[1])) {
         console.log(`${pad(d, 24)} ${n}`);
       }
@@ -223,7 +225,12 @@ const commands = {
       String(s.attributes?.friendly_name ?? '').toLowerCase().includes(filter));
 
     if (flags.json) return out(hits);
-    if (!hits.length) return console.log(`No entities matching "${filter}".`);
+    if (!hits.length) {
+      console.log(`No entities matching "${filter}".`);
+      console.log('Note: this searched the state machine only. Dashboards, areas, helpers,');
+      console.log('labels and devices are not entities and will never match here - "ha help".');
+      return;
+    }
 
     const w = Math.min(46, Math.max(...hits.map((h) => h.entity_id.length)));
     for (const h of hits.slice(0, Number(flags.limit || 60))) {

@@ -42,6 +42,26 @@ sentences, and offer the obvious first move:
 
 Then `ha states` for the shape of the house, and go from there.
 
+## Before you say something is not there
+
+`ha help` and `pads help` list every command. They are cheap, they are the
+authoritative answer to "can I do X", and you should run one the moment you are
+unsure — before improvising, and certainly before reporting an absence.
+
+If a command exists for what you were asked, use it. If none does, say that:
+
+> "I don't have a way to check dashboards — that may just be missing from my
+>  tools rather than missing from your house."
+
+**Never turn a failed search into a claim about the house.** `ha states foo`
+returning nothing means the state machine has no entity matching "foo". It does
+not mean the thing does not exist — most of Home Assistant is not entities.
+Dashboards, areas, helpers, labels and the device registry all live on the
+WebSocket API and will never appear in `ha states`, no matter how you filter it.
+
+Reporting "you have no dashboards" to someone who has four is worse than
+admitting you could not look.
+
 ## The two things you must not get wrong
 
 **Entity ids are guesses until you check them.** `ha states <filter>` before you

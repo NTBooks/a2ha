@@ -35,16 +35,7 @@ echo "[self-update] workspace repo: $ROOT"
 # Path of this script relative to the repo, so we can report a self-change.
 REL_SELF="${BASH_SOURCE[0]#$ROOT/}"
 
-PATHS=(
-  SOUL.md
-  workspace/AGENTS.md
-  workspace/HA.md
-  workspace/PADS.md
-  workspace/setup.sh
-  workspace/start.sh
-  workspace/bin
-  workspace/projects
-)
+PATHS=()  # filled in after fetch
 
 if git remote get-url upstream >/dev/null 2>&1; then
   git remote set-url upstream "$UPSTREAM_URL"
@@ -54,6 +45,17 @@ fi
 
 echo "[self-update] fetching $UPSTREAM_URL ($BRANCH)"
 git fetch --quiet --depth 1 upstream "$BRANCH"
+
+# Derived from upstream rather than hardcoded: a hand-maintained list silently
+# stops copying files that get added later. Everything under workspace/ except
+# data/, plus the top-level docs.
+mapfile -t PATHS < <(
+  git ls-tree -r --name-only "upstream/$BRANCH"     | grep -E '^(workspace/|SOUL\.md$|README\.md$|LICENSE$)'     | grep -v '^workspace/data/'
+)
+if [ ${#PATHS[@]} -eq 0 ]; then
+  echo "Found nothing to copy from upstream/$BRANCH." >&2
+  exit 1
+fi
 
 for p in "${PATHS[@]}"; do
   if git cat-file -e "upstream/$BRANCH:$p" 2>/dev/null; then

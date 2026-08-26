@@ -29,18 +29,7 @@ BRANCH="${BRANCH:-main}"
 
 # Everything the agent runs, minus workspace/data -- that holds the owner's
 # pads, share tokens and backups, and must survive an update untouched.
-PATHS=(
-  SOUL.md
-  README.md
-  LICENSE
-  workspace/AGENTS.md
-  workspace/HA.md
-  workspace/PADS.md
-  workspace/setup.sh
-  workspace/start.sh
-  workspace/bin
-  workspace/projects
-)
+PATHS=()  # filled in after fetch
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -52,6 +41,17 @@ cd "$TMP/agent"
 echo "[update] fetching $UPSTREAM ($BRANCH)"
 git remote add upstream "$UPSTREAM"
 git fetch --quiet upstream "$BRANCH"
+
+# Derived from upstream rather than hardcoded: a hand-maintained list silently
+# stops copying files that get added later. Everything under workspace/ except
+# data/, plus the top-level docs.
+mapfile -t PATHS < <(
+  git ls-tree -r --name-only "upstream/$BRANCH"     | grep -E '^(workspace/|SOUL\.md$|README\.md$|LICENSE$)'     | grep -v '^workspace/data/'
+)
+if [ ${#PATHS[@]} -eq 0 ]; then
+  echo "Found nothing to copy from upstream/$BRANCH." >&2
+  exit 1
+fi
 
 # Deliberately not a merge. The agent's workspace history and this repo's
 # history are unrelated, so merging conflicts on every file. Checking out

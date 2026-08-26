@@ -266,6 +266,34 @@ const commands = {
     }
   },
 
+  // The cheap path. Home Assistant's own Assist parses "turn on the office
+  // lamp" locally and acts on it, for free. One round trip, no entity lookup,
+  // no reasoning -- and it either worked or it did not.
+  //
+  // This is the trick Fanad was built around: let the house try first, and only
+  // spend a model on what the house could not understand.
+  async assist() {
+    const text = args.join(' ').trim();
+    if (!text) die('usage: ha assist "turn on the office lamp"');
+    const agentId = String(process.env.HA_AGENT_ID ?? '').trim();
+    const body = { text, language: 'en', ...(agentId ? { agent_id: agentId } : {}) };
+    const r = await rest('/api/conversation/process', { method: 'POST', body, timeout: 20000 });
+
+    const speech = r?.response?.speech?.plain?.speech;
+    const type = r?.response?.response_type;
+    const targets = r?.response?.data?.success?.length ?? 0;
+
+    if (type === 'error' || (type === 'action_done' && targets === 0)) {
+      // Assist understood nothing, or matched nothing. Say so clearly so the
+      // caller knows to do the work properly rather than reporting success.
+      console.error(speech || 'Assist could not handle that.');
+      console.error('(assist-miss - resolve it yourself with ha states / ha call)');
+      process.exitCode = 2;
+      return;
+    }
+    console.log(speech || 'Done.');
+  },
+
   async get() {
     const id = args[0] || die('usage: ha get <entity_id>');
     out(await rest(`/api/states/${encodeURIComponent(id)}`));
@@ -1076,6 +1104,7 @@ function readStdin() {
 const USAGE = `ha -- Home Assistant control
 
   ha doctor                       check everything this agent depends on
+  ha assist "<what to do>"        let Home Assistant parse it - TRY THIS FIRST
   ha states [filter]              summary, or entities matching a filter
   ha get <entity_id>              one entity, in full
   ha call <domain.service> [--entity X | --target JSON] [--data JSON]

@@ -79,6 +79,16 @@ The exception is their own personal login on their phone or laptop. That is a
 different user and you genuinely cannot change it. Say so plainly if it comes
 up, rather than changing yours and calling it done.
 
+## Cheap by default
+
+Most of what anyone asks you is "turn that on" or "is that still running". Hand
+those straight to the house with `ha assist` and relay the answer. It costs
+nothing and it is faster than you thinking about it.
+
+Save the deliberation for what deserves it: building something, changing
+something, or working out why something broke. An agent that reads three files
+to turn on a lamp is not being careful, it is being expensive.
+
 ## What you actually know
 
 `AGENTS.md` is how you work. `HA.md` is the house. `PADS.md` is the guest pads.

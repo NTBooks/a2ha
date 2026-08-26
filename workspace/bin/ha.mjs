@@ -171,11 +171,16 @@ const commands = {
     await probe('REST /api/', async () => (await rest('/api/'))?.message);
     await probe('read states', async () => `${(await rest('/api/states')).length} entities`);
     await probe('render template', () => rest('/api/template', { method: 'POST', body: { template: '{{ 1 + 1 }}' } }));
-    await probe('list automations (config API)', async () => {
-      // Undocumented but used by the HA UI editor. If this fails, automation
-      // writing is unavailable and HA.md's playbook needs the websocket route.
-      const list = await rest('/api/config/automation/config');
-      return Array.isArray(list) ? `${list.length} automations` : 'reachable';
+    await probe('automation config API', async () => {
+      // Undocumented but used by the HA UI editor. Note there is NO collection
+      // endpoint -- only /api/config/automation/config/<id> -- so probe a real
+      // id taken from the state machine. If this fails, automation writing is
+      // unavailable and HA.md's playbook needs the websocket route instead.
+      const states = await rest('/api/states');
+      const withId = states.filter((e) => e.entity_id.startsWith('automation.') && e.attributes?.id);
+      if (!withId.length) return 'no UI-editable automations to probe';
+      await rest(`/api/config/automation/config/${encodeURIComponent(withId[0].attributes.id)}`);
+      return `readable (${withId.length} editable automations)`;
     });
     await probe('websocket auth + area registry', async () => {
       const areas = await ws({ type: 'config/area_registry/list' });
@@ -309,18 +314,19 @@ async function configObject(kind) {
   const id = args[1];
 
   if (verb === 'list') {
-    const list = await rest(`/api/config/${kind}/config`).catch(() => null);
-    if (Array.isArray(list)) {
-      for (const item of list) {
-        console.log(`${pad(item.id ?? '?', 22)} ${item.alias ?? item.name ?? ''}`);
-      }
-      return;
-    }
-    // Fall back to the entity list, which always works.
+    // There is no collection endpoint for these -- only .../config/<id> -- so
+    // the state machine is the listing. attributes.id is the handle get/put/
+    // delete want; entities without one are YAML-defined and not UI-editable.
     const states = await rest('/api/states');
-    for (const s of states.filter((x) => x.entity_id.startsWith(`${kind}.`))) {
-      console.log(`${pad(s.entity_id, 44)} ${pad(s.state, 10)} ${s.attributes?.friendly_name ?? ''}`);
+    const rows = states.filter((x) => x.entity_id.startsWith(`${kind}.`));
+    if (!rows.length) return console.log(`No ${kind}s.`);
+    for (const r of rows) {
+      const id = r.attributes?.id;
+      console.log(`${pad(id ?? '(yaml)', 16)} ${pad(r.state, 8)} ${r.attributes?.friendly_name ?? r.entity_id}`);
     }
+    const yaml = rows.filter((r) => !r.attributes?.id).length;
+    if (yaml) console.log(`
+${yaml} defined in YAML - editable only in configuration.yaml, not through this API.`);
     return;
   }
 

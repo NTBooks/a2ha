@@ -271,9 +271,23 @@ its own, so this is the only undo that exists.
 
 ### Editing YAML (optional)
 
-Off by default. Home Assistant has no file API, so this needs the **File
-editor** add-on with a host port exposed on 3218. Set `HA_FILES_URL`,
-`HA_FILES_USER` and `HA_FILES_PASSWORD` and `ha file` lights up.
+Off by default. Home Assistant has no file API of its own, so this rides on the
+official **Terminal & SSH** add-on and talks SFTP to `/config`. Put a public key
+in the add-on's `authorized_keys`, map its port 22 to a host port, set
+`HA_SSH_KEY` to the private half, and `ha file` lights up. The host defaults to
+whatever `HA_BASE_URL` points at, so that one secret is usually the whole setup.
+
+Use the **official** add-on, not "Advanced SSH & Web Terminal". The latter
+declares `docker_api`, `host_dbus`, `host_network` and `SYS_ADMIN`, so it only
+starts with protection mode disabled — root over the whole machine in exchange
+for editing text files. The official one needs none of that and reaches the same
+`/config`.
+
+This used to drive the **File editor** add-on's REST API, which no longer works:
+File editor is ingress-only from 6.x, with no host port and no basic auth, and
+ingress needs a browser session cookie that a long-lived token cannot get — every
+`/api/hassio/*` path answers a token with 401. It's still the nicer editor for a
+human; it just isn't reachable by an agent.
 
 Writes are **validated and rolled back**. After each write the agent asks Home
 Assistant whether the configuration is still valid; if not, the previous
@@ -281,8 +295,14 @@ contents go straight back and you get the error. A broken `configuration.yaml`
 means HA won't start, and you'd usually find out at your next reboot rather than
 at the moment of the edit.
 
-Access is confined to `/config`, and `..` is refused. Only expose that port on a
-network you trust — it sits outside Home Assistant's own login.
+Access is confined to `/config`, and `..` is refused. That confinement carries
+more weight over SSH than it did over the add-on's REST API: the add-on logs in
+as root with the whole filesystem in reach, and this is the only thing keeping
+the agent inside `/config`.
+
+Only expose that port on a network you trust — over your tailnet or your LAN. An
+add-on port sits outside Home Assistant's own login, so key auth with the
+password option left empty is the posture to aim for.
 
 ### Updating a running agent
 

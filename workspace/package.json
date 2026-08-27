@@ -1,0 +1,13 @@
+{
+  "name": "a2ha-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dependencies for the A2HA agent CLIs in bin/.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0"
+  }
+}

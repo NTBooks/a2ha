@@ -37,12 +37,31 @@ export function haBaseUrl() {
   return String(url).trim().replace(/\/+$/, '');
 }
 
-// Same rule as haBaseUrl: the loopback end of the tunnel when Tailscale is up,
-// otherwise whatever was configured.
-export function filesBaseUrl() {
+// Where to reach the Terminal & SSH add-on for file access, as {host, port}.
+//
+// Same rule as haBaseUrl -- the loopback end of the tunnel when Tailscale is
+// up, otherwise what was configured -- with one addition: the host defaults to
+// whatever HA_BASE_URL points at, because the add-on runs on the Home
+// Assistant machine by definition. That default is the difference between one
+// secret to set up file access and three.
+export function sshTarget() {
   applyProxy();
-  const url = process.env.HA_FILES_EFFECTIVE_URL || process.env.HA_FILES_URL || '';
-  return String(url).trim().replace(/\/+$/, '');
+
+  const effective = String(process.env.HA_SSH_EFFECTIVE ?? '').trim();
+  if (effective) {
+    const [host, port] = effective.split(':');
+    return { host, port: Number(port) || 22 };
+  }
+
+  let host = String(process.env.HA_SSH_HOST ?? '').trim();
+  if (!host) {
+    // Deliberately HA_BASE_URL and not haBaseUrl(): the latter can be the
+    // forwarder's 127.0.0.1, which is the HTTP tunnel, not the SSH one.
+    const raw = String(process.env.HA_BASE_URL ?? '').trim();
+    try { host = raw ? new URL(raw).hostname : ''; } catch { host = ''; }
+  }
+
+  return { host, port: Number(String(process.env.HA_SSH_PORT ?? '').trim()) || 22 };
 }
 
 export const proxyInUse = () => {

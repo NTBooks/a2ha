@@ -142,12 +142,13 @@ Four things change, because they were Pinata's job:
 
 **`manifest.json` does nothing.** Hermes has its own config. Take from the
 manifest only the list of environment variables — `HA_BASE_URL`, `HA_TOKEN`,
-and optionally `HA_AGENT_ID`, `PUBLIC_BASE_URL`, `HA_FILES_*` — and set them
+and optionally `HA_AGENT_ID`, `PUBLIC_BASE_URL`, `HA_SSH_*` — and set them
 however your Hermes install expects.
 
 **Nothing runs `scripts.build` / `scripts.start`.** Run `npm ci --omit=dev`
-once, and start `src/index.js` yourself — the systemd unit above is fine
-alongside Hermes.
+once in `workspace/` (the `ssh2` package, needed only for `ha file`) and once in
+`workspace/projects/speeddial/`, then start `src/index.js` yourself — the systemd
+unit above is fine alongside Hermes.
 
 **Paths.** Every doc says `/home/hermes/data/workspace/...` because that is
 where Pinata puts it. If yours differs, the tools still work — they resolve

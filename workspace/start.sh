@@ -74,9 +74,9 @@ if start_tailscale; then
   # option: --use-env-proxy"), which broke every command. A TCP forwarder needs
   # nothing from Node, and works the same for fetch, WebSocket and curl.
   # Forward each service we need onto a loopback port. Home Assistant is one;
-  # the File editor add-on, if enabled, is another on a different port -- and a
-  # tunnel for one does nothing for the other, which is easy to forget until
-  # file editing fails with a confusing network error.
+  # the Terminal & SSH add-on, if file access is enabled, is another on a
+  # different port -- and a tunnel for one does nothing for the other, which is
+  # easy to forget until file editing fails with a confusing network error.
   #
   # Prints "scheme://host:port" split into parts, or nothing if unusable.
   parse_url() {
@@ -92,6 +92,17 @@ if start_tailscale; then
     printf '%s %s %s' "$scheme" "$host" "${port:-80}"
   }
 
+  # The actual forwarder. SSH has no URL to parse, so it calls this directly
+  # while the HTTP services come through forward() below.
+  forward_hostport() {
+    local label="$1" host="$2" port="$3" local_port="$4"
+    [ -z "$host" ] && { echo "[start] $label: no host to forward"; return 1; }
+    echo "[start] forwarding 127.0.0.1:$local_port -> $host:$port ($label)"
+    node "$WORKSPACE/bin/tsforward.mjs" "$local_port" "$host" "$port" "$((PROXY_PORT + 1))" \
+      >>"/tmp/tsforward.log" 2>&1 &
+    return 0
+  }
+
   forward() {
     local label="$1" url="$2" local_port="$3"
     local parsed scheme host port
@@ -104,10 +115,7 @@ if start_tailscale; then
       echo "[start] $label: use http://$host:$port - the tailnet encrypts it."
       return 1
     fi
-    echo "[start] forwarding 127.0.0.1:$local_port -> $host:$port ($label)"
-    node "$WORKSPACE/bin/tsforward.mjs" "$local_port" "$host" "$port" "$((PROXY_PORT + 1))" \
-      >>"/tmp/tsforward.log" 2>&1 &
-    return 0
+    forward_hostport "$label" "$host" "$port" "$local_port"
   }
 
   : > /tmp/tsforward.log
@@ -119,11 +127,18 @@ if start_tailscale; then
 HA_EFFECTIVE_URL=$HA_EFFECTIVE_URL"
   fi
 
-  if [ -n "${HA_FILES_URL:-}" ]; then
-    if forward "file editor" "$HA_FILES_URL" "${HA_FILES_LOCAL_PORT:-18218}"; then
-      export HA_FILES_EFFECTIVE_URL="http://127.0.0.1:${HA_FILES_LOCAL_PORT:-18218}"
+  # File access is SSH to the Terminal & SSH add-on. That add-on runs on the
+  # Home Assistant machine by definition, so the host defaults to HA_BASE_URL's
+  # rather than being a fourth secret to keep in step with the other three.
+  if [ -n "${HA_SSH_KEY:-}" ]; then
+    SSH_HOST="${HA_SSH_HOST:-}"
+    if [ -z "$SSH_HOST" ] && parsed="$(parse_url "${HA_BASE_URL:-}")"; then
+      read -r _ SSH_HOST _ <<< "$parsed"
+    fi
+    if forward_hostport "ssh (file access)" "$SSH_HOST" "${HA_SSH_PORT:-22}" "${HA_SSH_LOCAL_PORT:-18022}"; then
+      export HA_SSH_EFFECTIVE="127.0.0.1:${HA_SSH_LOCAL_PORT:-18022}"
       MARKER="$MARKER
-HA_FILES_EFFECTIVE_URL=$HA_FILES_EFFECTIVE_URL"
+HA_SSH_EFFECTIVE=$HA_SSH_EFFECTIVE"
     fi
   fi
 

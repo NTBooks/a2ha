@@ -53,18 +53,28 @@
       "required": false
     },
     {
-      "name": "HA_FILES_URL",
-      "description": "Optional. Enables editing YAML files in /config. Requires the Home Assistant \"File editor\" add-on with a host port exposed on 3218 - e.g. http://homeassistant.your-tailnet.ts.net:3218. Leave blank and the agent cannot touch files, which is the safe default. Only set this if Home Assistant is reachable privately; the add-on port has no Home Assistant login in front of it.",
+      "name": "HA_SSH_KEY",
+      "description": "Optional. Enables editing YAML files in /config, and nothing else turns it on. The PRIVATE half of an SSH keypair whose public half is in the authorized_keys of Home Assistant's official \"Terminal & SSH\" add-on - paste the whole file, newlines and all (base64 of it also works if your secret store dislikes newlines). Leave blank and the agent cannot touch files, which is the safe default. Only set this if Home Assistant is reachable privately, over your tailnet or LAN; an add-on port sits outside Home Assistant's own login.",
       "required": false
     },
     {
-      "name": "HA_FILES_USER",
-      "description": "Optional. Username you set in the File editor add-on options. Only used with HA_FILES_URL.",
+      "name": "HA_SSH_HOST",
+      "description": "Optional. Host running the Terminal & SSH add-on. Defaults to the host in HA_BASE_URL, which is right unless Home Assistant is behind a reverse proxy on a different address. Only used with HA_SSH_KEY.",
       "required": false
     },
     {
-      "name": "HA_FILES_PASSWORD",
-      "description": "Optional. Password you set in the File editor add-on options. Only used with HA_FILES_URL.",
+      "name": "HA_SSH_PORT",
+      "description": "Optional. Host port the Terminal & SSH add-on's port 22 is mapped to. Defaults to 22. Only used with HA_SSH_KEY.",
+      "required": false
+    },
+    {
+      "name": "HA_SSH_USER",
+      "description": "Optional. SSH username. Defaults to root, which is what the Terminal & SSH add-on logs in as. Only used with HA_SSH_KEY.",
+      "required": false
+    },
+    {
+      "name": "HA_SSH_PASSPHRASE",
+      "description": "Optional. Passphrase for HA_SSH_KEY, if you made the key with one. Leave blank for an unencrypted key.",
       "required": false
     },
     {
@@ -74,7 +84,7 @@
     }
   ],
   "scripts": {
-    "build": "bash workspace/setup.sh && cd workspace/projects/speeddial && npm ci --omit=dev",
+    "build": "bash workspace/setup.sh && npm ci --omit=dev --prefix workspace && cd workspace/projects/speeddial && npm ci --omit=dev",
     "start": "bash workspace/start.sh"
   },
   "routes": [

@@ -12,7 +12,7 @@
 //
 // Run `ha` with no arguments for the command list.
 
-import { haBaseUrl, filesBaseUrl, proxyInUse } from './proxy.mjs';
+import { haBaseUrl, sshTarget, proxyInUse } from './proxy.mjs';
 
 // Resolves to the tailnet forwarder's loopback address when Tailscale is up,
 // otherwise to HA_BASE_URL as configured. See proxy.mjs.
@@ -206,12 +206,12 @@ const commands = {
     // rather than a public URL is the difference between two very different
     // security postures, and it is not obvious from anything else here.
     if (filesEnabled()) {
-      await probe('file editor', async () => {
-        await filesFetch('/api/listdir?path=%2Fconfig');
-        return `reachable at ${FILES_URL}`;
+      await probe('file access', async () => {
+        const { dirs, files } = await listConfigDir('/config');
+        return `sftp ${SSH_USER}@${SSH_HOST}:${SSH_PORT} (${dirs.length} dirs, ${files.length} files in /config)`;
       });
     } else {
-      checks.push(['file editor', 'off', 'YAML editing disabled - see "ha file"']);
+      checks.push(['file access', 'off', 'YAML editing disabled - see "ha file"']);
     }
 
     checks.push(['network path', 'ok', proxyInUse()
@@ -594,11 +594,9 @@ const commands = {
 
     if (verb === 'ls') {
       const path = safeConfigPath(args[1] || '/config');
-      const text = await filesFetch(`/api/listdir?path=${encodeURIComponent(path)}`);
-      let listing;
-      try { listing = JSON.parse(text); } catch { return out(text); }
-      for (const d of listing.dirs ?? []) console.log(`${pad('dir', 6)} ${d.name ?? d}`);
-      for (const f of listing.files ?? []) console.log(`${pad('file', 6)} ${f.name ?? f}`);
+      const listing = await listConfigDir(path);
+      for (const d of listing.dirs) console.log(`${pad('dir', 6)} ${d}`);
+      for (const f of listing.files) console.log(`${pad('file', 6)} ${f}`);
       return;
     }
 
@@ -620,7 +618,7 @@ const commands = {
       if (!text) die('Nothing to write. Pass --body or pipe the new contents on stdin.');
 
       const saved = flags['no-backup'] ? null : await snapshotFile(path, 'overwrite');
-      await filesFetch('/api/save', { method: 'POST', form: { filename: path, text } });
+      await writeConfigFile(path, text);
       console.log(`Wrote ${text.length} bytes to ${path}.`);
       if (saved) {
         console.log(saved.existed
@@ -642,7 +640,7 @@ const commands = {
       console.error('Home Assistant says the configuration is now INVALID:');
       console.error(errors ? String(errors).slice(0, 1200) : '(no detail given)');
       if (saved && saved.existed) {
-        await filesFetch('/api/save', { method: 'POST', form: { filename: path, text: saved.before } });
+        await writeConfigFile(path, saved.before);
         console.error('');
         console.error(`Rolled ${path} back to how it was. Nothing was left broken.`);
       } else if (saved) {
@@ -656,7 +654,7 @@ const commands = {
     if (verb === 'rm') {
       const path = safeConfigPath(args[1]);
       const saved = flags['no-backup'] ? null : await snapshotFile(path, 'delete');
-      await filesFetch('/api/delete', { method: 'POST', form: { path } });
+      await deleteConfigFile(path);
       console.log(`Deleted ${path}.`);
       if (saved?.existed) console.log(`Backed up to ${saved.file} - restore with: ha file restore ${path}`);
       return;
@@ -672,11 +670,11 @@ const commands = {
       })();
       const snap = JSON.parse(readFileSync(chosen, 'utf8'));
       if (!snap.existed) {
-        await filesFetch('/api/delete', { method: 'POST', form: { path } });
+        await deleteConfigFile(path);
         console.log(`${path} did not exist at that point, so it has been removed again.`);
         return;
       }
-      await filesFetch('/api/save', { method: 'POST', form: { filename: path, text: snap.body } });
+      await writeConfigFile(path, snap.body);
       console.log(`Restored ${path} from ${snap.savedAt}.`);
       return;
     }
@@ -867,70 +865,182 @@ async function snapshotDashboard(urlPath, reason) {
 }
 
 // --- YAML / raw file access --------------------------------------------------
-// Home Assistant has no file API of its own. The File editor add-on does, so
-// this is opt-in: set HA_FILES_URL and it lights up, leave it unset and every
-// file command explains how to turn it on.
+// Home Assistant has no file API of its own, so this rides on the official
+// "Terminal & SSH" add-on and talks SFTP to /config. Opt-in: set HA_SSH_KEY and
+// it lights up, leave it unset and every file command explains how to enable it.
 //
-// Studio Code Server is the nicer editor for a human but speaks the VS Code
-// server protocol, not a REST API, so it is no use to us here.
+// This used to drive the File editor add-on's REST API. That is no longer
+// possible. File editor is ingress-only from 6.x -- no host port, no basic
+// auth -- and ingress needs a browser session cookie that a long-lived access
+// token cannot obtain (every /api/hassio/* path answers a token with 401).
+// Studio Code Server speaks the VS Code server protocol rather than a file API.
+// SFTP is the one file interface on a stock Home Assistant that an agent can
+// actually hold onto.
+//
+// Deliberately the OFFICIAL Terminal & SSH add-on, not Advanced SSH & Web
+// Terminal: the latter declares docker_api, host_dbus, host_network and
+// SYS_ADMIN, so it only starts with protection mode off, which is root over the
+// whole machine in exchange for editing text files.
 
-// Resolves to the tunnel's loopback end when Tailscale is up. Without this the
-// File editor is simply unreachable from the container on a tailnet, because
-// the tunnel for Home Assistant's port does nothing for the add-on's.
-const FILES_URL = filesBaseUrl();
-const FILES_USER = String(process.env.HA_FILES_USER ?? '').trim();
-const FILES_PASS = String(process.env.HA_FILES_PASSWORD ?? '').trim();
+const SSH_USER = String(process.env.HA_SSH_USER ?? '').trim() || 'root';
+const SSH_PASSPHRASE = String(process.env.HA_SSH_PASSPHRASE ?? '').trim();
+const { host: SSH_HOST, port: SSH_PORT } = sshTarget();
+
+// A private key is multi-line and secret stores disagree about whether they
+// preserve newlines -- some flatten them to a literal backslash-n, some refuse
+// them outright. Accept the PEM as-is, with escaped newlines, or base64-wrapped,
+// so "the key looks right but auth fails" stops being a category of bug.
+function decodeKey(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) return '';
+  if (text.includes('BEGIN')) return text.replace(/\\n/g, '\n').replace(/\s*$/, '\n');
+  try {
+    const decoded = Buffer.from(text, 'base64').toString('utf8');
+    if (decoded.includes('BEGIN')) return decoded.replace(/\s*$/, '\n');
+  } catch { /* not base64; fall through and let ssh2 complain */ }
+  return text;
+}
+
+const SSH_KEY = decodeKey(process.env.HA_SSH_KEY);
 
 const FILES_OFF = [
   'File editing is not enabled on this agent.',
   '',
   'To turn it on:',
-  '  1. In Home Assistant, install the "File editor" add-on if you have not already.',
-  '  2. Open its Configuration tab. Under Network, give port 3218 a host port',
-  '     (3218 is fine). Under Options set a username and password.',
-  '  3. Start the add-on.',
-  '  4. Add these secrets to this agent and restart it:',
-  '       HA_FILES_URL       http://<same host as HA_BASE_URL>:3218',
-  '       HA_FILES_USER      the username you set',
-  '       HA_FILES_PASSWORD  the password you set',
+  '  1. In Home Assistant, install the official "Terminal & SSH" add-on.',
+  '     Not "Advanced SSH & Web Terminal" - that one only starts with protection',
+  '     mode disabled, which hands it the Docker API and root over the whole box.',
+  '  2. Make a keypair, on any machine:  ssh-keygen -t ed25519 -f a2ha -N ""',
+  '  3. In the add-on\'s Configuration tab: paste the PUBLIC half (a2ha.pub) into',
+  '     authorized_keys, leave password empty so key auth is the only way in, and',
+  '     under Network give port 22 a host port.',
+  '  4. Start the add-on.',
+  '  5. Add these secrets to this agent and restart it:',
+  '       HA_SSH_KEY   the PRIVATE half - the whole a2ha file, newlines and all',
+  '       HA_SSH_HOST  optional, defaults to the host in HA_BASE_URL',
+  '       HA_SSH_PORT  optional, defaults to 22',
+  '       HA_SSH_USER  optional, defaults to root, which is what the add-on uses',
   '',
   'Only do this if Home Assistant is reachable privately - over your tailnet or',
-  'your LAN. The add-on port has no Home Assistant login in front of it.',
+  'your LAN. An add-on port sits outside Home Assistant\'s own login.',
 ].join('\n');
 
-function filesEnabled() { return !!FILES_URL; }
+function filesEnabled() { return !!(SSH_KEY && SSH_HOST); }
 
 function requireFiles() {
   if (!filesEnabled()) { console.error(FILES_OFF); process.exit(3); }
 }
 
-function filesAuthHeader() {
-  if (!FILES_USER && !FILES_PASS) return {};
-  const raw = Buffer.from(`${FILES_USER}:${FILES_PASS}`).toString('base64');
-  return { Authorization: `Basic ${raw}` };
+// ssh2's own failure messages are terse to the point of being unhelpful --
+// "All configured authentication methods failed" names none of the four
+// settings that could be wrong -- so say which one to go and look at.
+function sshHint(err) {
+  const m = String(err?.message || err);
+  if (/authentication methods failed|publickey/i.test(m)) {
+    return `${m}\nThe key was refused. Check HA_SSH_KEY holds the PRIVATE half of a key listed in the add-on's authorized_keys, and that HA_SSH_USER (currently "${SSH_USER}") is right - Terminal & SSH logs in as root.`;
+  }
+  if (/ECONNREFUSED/i.test(m)) {
+    return `${m}\nNothing is listening on ${SSH_HOST}:${SSH_PORT}. Is the Terminal & SSH add-on started, and does its Network section map port 22 to a host port?`;
+  }
+  if (/timed out|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND/i.test(m)) {
+    return `${m}\nCould not reach ${SSH_HOST}:${SSH_PORT}.` + (proxyInUse()
+      ? ' Home Assistant is going over the tailnet, so SSH needs its own forwarder - check start.sh brought one up.'
+      : '');
+  }
+  return m;
 }
 
-async function filesFetch(path, { method = 'GET', form } = {}) {
-  const headers = { ...filesAuthHeader() };
-  let body;
-  if (form) {
-    headers['Content-Type'] = 'application/x-www-form-urlencoded';
-    body = new URLSearchParams(form).toString();
+// One connection per process, opened on first use. A single command can do
+// several operations -- snapshot, write, validate, roll back -- and that is one
+// handshake, not four.
+let sshConn = null;
+let sftpClient = null;
+
+async function sftp() {
+  if (sftpClient) return sftpClient;
+
+  // Imported lazily, not at the top of the file: file access is opt-in, and a
+  // missing node_modules should break `ha file`, not `ha states`.
+  let Client;
+  try { ({ Client } = await import('ssh2')); } catch {
+    throw new Error('The ssh2 package is not installed. Run the build (npm ci in workspace/) or push to the repo to reinstall dependencies.');
   }
-  const res = await fetch(`${FILES_URL}${path}`, {
-    method, headers, body, signal: AbortSignal.timeout(20000),
+
+  sshConn = await new Promise((resolve, reject) => {
+    const c = new Client();
+    c.on('ready', () => resolve(c));
+    c.on('error', (err) => reject(new Error(sshHint(err))));
+    c.connect({
+      host: SSH_HOST,
+      port: SSH_PORT,
+      username: SSH_USER,
+      privateKey: SSH_KEY,
+      passphrase: SSH_PASSPHRASE || undefined,
+      readyTimeout: 20000,
+    });
   });
-  const text = await res.text().catch(() => '');
-  if (res.status === 401) {
-    throw new Error('The File editor rejected the credentials. Check HA_FILES_USER and HA_FILES_PASSWORD.');
-  }
-  if (!res.ok) throw new Error(`File editor ${method} ${path} -> HTTP ${res.status}: ${text.slice(0, 200)}`);
-  return text;
+
+  sftpClient = await new Promise((resolve, reject) =>
+    sshConn.sftp((err, s) => (err ? reject(new Error(sshHint(err))) : resolve(s))));
+  return sftpClient;
 }
 
-// Refuse anything outside the config directory. The add-on may or may not
-// enforce a base path itself, and this agent has no business editing the rest
-// of the filesystem regardless.
+// ssh2 holds the event loop open, so without this the process finishes its work
+// and then hangs instead of exiting.
+function closeFiles() {
+  try { sshConn?.end(); } catch { /* already gone */ }
+  sshConn = null;
+  sftpClient = null;
+}
+
+async function listConfigDir(path) {
+  const s = await sftp();
+  const entries = await new Promise((resolve, reject) =>
+    s.readdir(path, (err, list) => (err ? reject(new Error(`Could not list ${path}: ${err.message}`)) : resolve(list))));
+  const dirs = [];
+  const files = [];
+  for (const e of entries) {
+    const isDir = typeof e.attrs?.isDirectory === 'function'
+      ? e.attrs.isDirectory()
+      : String(e.longname ?? '').startsWith('d');
+    (isDir ? dirs : files).push(e.filename);
+  }
+  return { dirs: dirs.sort(), files: files.sort() };
+}
+
+async function readConfigFile(path) {
+  const s = await sftp();
+  return new Promise((resolve, reject) => {
+    s.readFile(path, 'utf8', (err, data) => {
+      if (!err) return resolve(String(data));
+      // "It is not there" is a real answer to a read, not a transport failure,
+      // and snapshotFile below depends on being able to tell the two apart.
+      if (err.code === 2 || /no such file/i.test(err.message)) {
+        const e = new Error('File not found');
+        e.missing = true;
+        return reject(e);
+      }
+      reject(new Error(`Could not read ${path}: ${err.message}`));
+    });
+  });
+}
+
+async function writeConfigFile(path, text) {
+  const s = await sftp();
+  await new Promise((resolve, reject) =>
+    s.writeFile(path, text, 'utf8', (err) => (err ? reject(new Error(`Could not write ${path}: ${err.message}`)) : resolve())));
+}
+
+async function deleteConfigFile(path) {
+  const s = await sftp();
+  await new Promise((resolve, reject) =>
+    s.unlink(path, (err) => (err ? reject(new Error(`Could not delete ${path}: ${err.message}`)) : resolve())));
+}
+
+// Refuse anything outside the config directory. SSH lands us on a root shell
+// with the whole filesystem in reach, so this confinement is now the only thing
+// keeping file access to /config -- it matters more than it did over the
+// add-on's REST API, not less.
 function safeConfigPath(input) {
   const raw = String(input ?? '').trim();
   if (!raw) throw new Error('Which file?');
@@ -941,13 +1051,6 @@ function safeConfigPath(input) {
   }
   if (normalised.includes('/../')) throw new Error('Path traversal is not allowed.');
   return normalised;
-}
-
-async function readConfigFile(path) {
-  const text = await filesFetch(`/api/file?filename=${encodeURIComponent(path)}`);
-  // The add-on answers a missing file with this literal body and a 200.
-  if (text === 'File not found') { const e = new Error('File not found'); e.missing = true; throw e; }
-  return text;
 }
 
 async function snapshotFile(path, reason) {
@@ -1167,4 +1270,4 @@ commands[cmd]().catch((err) => {
   // exitCode rather than exit(): a hard exit from inside a websocket callback
   // aborts before the socket finishes closing, which trips libuv on Windows.
   process.exitCode = 1;
-});
+}).finally(closeFiles);

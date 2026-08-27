@@ -247,7 +247,10 @@ Reach for a UI-editable object first. An automation you can write with
 things that have no API: `configuration.yaml`, packages, template sensors,
 `customize.yaml`, integrations configured in YAML.
 
-Access is limited to `/config`. Anything else is refused, as is `..`.
+Access is limited to `/config`. Anything else is refused, as is `..`. File access
+runs over SSH to Home Assistant's Terminal & SSH add-on, which logs in as root —
+so that limit is a rule the tool enforces, not a boundary the connection has.
+Do not go looking for ways around it.
 
 Most YAML changes need a restart or a targeted reload to take effect — check
 with `ha file check` first, then tell the owner what needs restarting rather

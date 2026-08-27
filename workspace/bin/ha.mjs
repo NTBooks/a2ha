@@ -12,7 +12,7 @@
 //
 // Run `ha` with no arguments for the command list.
 
-import { haBaseUrl, proxyInUse } from './proxy.mjs';
+import { haBaseUrl, filesBaseUrl, proxyInUse } from './proxy.mjs';
 
 // Resolves to the tailnet forwarder's loopback address when Tailscale is up,
 // otherwise to HA_BASE_URL as configured. See proxy.mjs.
@@ -874,7 +874,10 @@ async function snapshotDashboard(urlPath, reason) {
 // Studio Code Server is the nicer editor for a human but speaks the VS Code
 // server protocol, not a REST API, so it is no use to us here.
 
-const FILES_URL = String(process.env.HA_FILES_URL ?? '').trim().replace(/\/+$/, '');
+// Resolves to the tunnel's loopback end when Tailscale is up. Without this the
+// File editor is simply unreachable from the container on a tailnet, because
+// the tunnel for Home Assistant's port does nothing for the add-on's.
+const FILES_URL = filesBaseUrl();
 const FILES_USER = String(process.env.HA_FILES_USER ?? '').trim();
 const FILES_PASS = String(process.env.HA_FILES_PASSWORD ?? '').trim();
 

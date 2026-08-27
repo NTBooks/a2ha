@@ -37,6 +37,14 @@ export function haBaseUrl() {
   return String(url).trim().replace(/\/+$/, '');
 }
 
+// Same rule as haBaseUrl: the loopback end of the tunnel when Tailscale is up,
+// otherwise whatever was configured.
+export function filesBaseUrl() {
+  applyProxy();
+  const url = process.env.HA_FILES_EFFECTIVE_URL || process.env.HA_FILES_URL || '';
+  return String(url).trim().replace(/\/+$/, '');
+}
+
 export const proxyInUse = () => {
   applyProxy();
   return !!process.env.HA_EFFECTIVE_URL;

@@ -73,36 +73,67 @@ if start_tailscale; then
   # --use-env-proxy, and a real deployment turned out not to be ("node: bad
   # option: --use-env-proxy"), which broke every command. A TCP forwarder needs
   # nothing from Node, and works the same for fetch, WebSocket and curl.
-  HA_URL="${HA_BASE_URL:-}"
-  HA_SCHEME="${HA_URL%%://*}"
-  HA_HOSTPORT="${HA_URL#*://}"
-  HA_HOSTPORT="${HA_HOSTPORT%%/*}"
-  HA_HOST="${HA_HOSTPORT%%:*}"
-  HA_PORT="${HA_HOSTPORT##*:}"
-  [ "$HA_PORT" = "$HA_HOST" ] && HA_PORT=8123
+  # Forward each service we need onto a loopback port. Home Assistant is one;
+  # the File editor add-on, if enabled, is another on a different port -- and a
+  # tunnel for one does nothing for the other, which is easy to forget until
+  # file editing fails with a confusing network error.
+  #
+  # Prints "scheme://host:port" split into parts, or nothing if unusable.
+  parse_url() {
+    local url="$1" scheme rest hostport host port
+    [ -z "$url" ] && return 1
+    scheme="${url%%://*}"
+    rest="${url#*://}"
+    hostport="${rest%%/*}"
+    host="${hostport%%:*}"
+    port="${hostport##*:}"
+    [ "$port" = "$host" ] && port=""
+    [ -z "$host" ] && return 1
+    printf '%s %s %s' "$scheme" "$host" "${port:-80}"
+  }
 
-  if [ "$HA_SCHEME" = "https" ]; then
-    # Forwarding would present the certificate against 127.0.0.1 and fail
-    # validation. On a tailnet plain http is already encrypted by WireGuard.
-    echo "[start] WARNING: HA_BASE_URL is https, which cannot be forwarded over"
-    echo "[start] the tailnet without breaking certificate validation. Use"
-    echo "[start] http://$HA_HOST:$HA_PORT instead - the tailnet encrypts it."
-    rm -f "$WORKSPACE/.tailscale-env"
-  elif [ -z "$HA_HOST" ]; then
-    echo "[start] HA_BASE_URL is not set, so there is nothing to forward."
-    rm -f "$WORKSPACE/.tailscale-env"
+  forward() {
+    local label="$1" url="$2" local_port="$3"
+    local parsed scheme host port
+    parsed="$(parse_url "$url")" || { echo "[start] $label: no URL to forward"; return 1; }
+    read -r scheme host port <<< "$parsed"
+    if [ "$scheme" = "https" ]; then
+      # Forwarding would present the certificate against 127.0.0.1 and fail
+      # validation. On a tailnet plain http is already encrypted by WireGuard.
+      echo "[start] $label: https cannot be forwarded over the tailnet."
+      echo "[start] $label: use http://$host:$port - the tailnet encrypts it."
+      return 1
+    fi
+    echo "[start] forwarding 127.0.0.1:$local_port -> $host:$port ($label)"
+    node "$WORKSPACE/bin/tsforward.mjs" "$local_port" "$host" "$port" "$((PROXY_PORT + 1))" \
+      >>"/tmp/tsforward.log" 2>&1 &
+    return 0
+  }
+
+  : > /tmp/tsforward.log
+  MARKER=""
+
+  if forward "home assistant" "${HA_BASE_URL:-}" "${HA_LOCAL_PORT:-18123}"; then
+    export HA_EFFECTIVE_URL="http://127.0.0.1:${HA_LOCAL_PORT:-18123}"
+    MARKER="$MARKER
+HA_EFFECTIVE_URL=$HA_EFFECTIVE_URL"
+  fi
+
+  if [ -n "${HA_FILES_URL:-}" ]; then
+    if forward "file editor" "$HA_FILES_URL" "${HA_FILES_LOCAL_PORT:-18218}"; then
+      export HA_FILES_EFFECTIVE_URL="http://127.0.0.1:${HA_FILES_LOCAL_PORT:-18218}"
+      MARKER="$MARKER
+HA_FILES_EFFECTIVE_URL=$HA_FILES_EFFECTIVE_URL"
+    fi
+  fi
+
+  sleep 1
+
+  if [ -n "$MARKER" ]; then
+    # The agent's own shells do not inherit this, so leave it on disk.
+    printf '%s\n' "$MARKER" | sed '/^$/d' > "$WORKSPACE/.tailscale-env"
   else
-    LOCAL_PORT="${HA_LOCAL_PORT:-18123}"
-    echo "[start] forwarding 127.0.0.1:$LOCAL_PORT -> $HA_HOST:$HA_PORT over the tailnet"
-    node "$WORKSPACE/bin/tsforward.mjs" "$LOCAL_PORT" "$HA_HOST" "$HA_PORT" "$((PROXY_PORT + 1))"       >/tmp/tsforward.log 2>&1 &
-    sleep 1
-    export HA_EFFECTIVE_URL="http://127.0.0.1:$LOCAL_PORT"
-
-    # The agent's own shells do not inherit this, so leave it on disk for the
-    # CLIs to pick up.
-    cat > "$WORKSPACE/.tailscale-env" <<EOF
-HA_EFFECTIVE_URL=$HA_EFFECTIVE_URL
-EOF
+    rm -f "$WORKSPACE/.tailscale-env"
   fi
 else
   rm -f "$WORKSPACE/.tailscale-env"

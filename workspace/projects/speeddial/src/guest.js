@@ -357,12 +357,93 @@ export async function fire(req, res, token) {
   return json(res, 200, { ok: true, speech: r.speech, slot: slotNo });
 }
 
+// A public helper page, mounted on its own route. The config app sits behind
+// Pinata's gateway token, and the only way in is a URL carrying that token --
+// which means hand-assembling one from two things copied out of two different
+// tabs. This page does the assembling, explains why it is needed, and says the
+// part nobody tells you: you do it once, because the gateway sets a cookie.
+//
+// It handles no secrets itself. The token is pasted in the browser and used to
+// build a link there; nothing is sent here.
+export function setupPage(req, res) {
+  noStore(res);
+  const inner = `
+  <header>
+    <h1>Open the pad editor</h1>
+    <p class="sub">One-time setup. About thirty seconds.</p>
+  </header>
+
+  <div class="step">
+    <h2>1. Copy your gateway token</h2>
+    <p>In the Pinata dashboard, open this agent, go to the <b>Secrets</b> tab and
+       scroll to the bottom. There is a <b>Gateway Token</b> there. Copy it.</p>
+  </div>
+
+  <div class="step">
+    <h2>2. Paste it here</h2>
+    <input id="tok" type="password" placeholder="Paste the gateway token" autocomplete="off" spellcheck="false">
+    <button id="go" class="primary">Open the editor</button>
+    <p class="muted" id="err"></p>
+  </div>
+
+  <div class="step">
+    <h2>3. You should not need to do this again</h2>
+    <p>Following that link makes your browser remember the token as a cookie, so
+       from then on the plain editor address works on its own. Bookmark it once
+       it opens.</p>
+    <p class="muted">If it ever stops working, the token was rotated — come back
+       here and paste the new one.</p>
+  </div>
+
+  <div class="warn">
+    <b>Treat that token like a password.</b> It is not a pad-editor login — it
+    grants full access to this agent's container. Do not paste it into chat, and
+    do not share the address bar of the page it opens.
+  </div>
+
+  <script>
+  (function () {
+    var tok = document.getElementById('tok');
+    var err = document.getElementById('err');
+    function go() {
+      var v = tok.value.trim();
+      if (!v) { err.textContent = 'Paste the token first.'; return; }
+      // /admin is a top-level route on this agent, so build from the origin.
+      // Deriving it from this page's path would produce /pad/admin if /setup
+      // ever ended up mounted under another prefix.
+      location.href = location.origin + '/admin?token=' + encodeURIComponent(v);
+    }
+    document.getElementById('go').addEventListener('click', go);
+    tok.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+  })();
+  </script>`;
+
+  const extra = `<style>
+    .step { background:var(--card); border:1px solid var(--line); border-radius:12px;
+            padding:1rem 1.1rem; margin-bottom:.9rem; text-align:left; }
+    .step h2 { font-size:1rem; margin:0 0 .4rem; }
+    .step p { margin:.3rem 0; font-size:.92rem; }
+    .muted { color:var(--muted); font-size:.85rem; }
+    input { width:100%; padding:.65rem .7rem; border-radius:9px; border:1px solid var(--line);
+            background:var(--bg); color:var(--ink); font:inherit; margin:.4rem 0; }
+    button.primary { background:var(--accent); color:#fff; border:1px solid var(--accent);
+                     border-radius:9px; padding:.6rem 1rem; font:inherit; font-weight:600; cursor:pointer; }
+    .warn { border:1px solid var(--bad); color:var(--bad); border-radius:12px;
+            padding:.85rem 1rem; font-size:.88rem; text-align:left; }
+  </style>`;
+
+  return send(res, 200, 'text/html; charset=utf-8', shell('Open the pad editor', inner, extra));
+}
+
 export function handler(req, res) {
   const url = new URL(req.url, 'http://localhost');
   // Match /r/<token> whether or not the gateway kept its route prefix. The
   // docs say the prefix is stripped; a real deployment showed it is not, and
   // the manifest's own note about setting Vite's base hints the same. Tolerate
   // both rather than betting on either.
+  // The /setup route lands here too, since it points at this same server.
+  if (/(?:^|\/)setup\/?$/.test(url.pathname)) return setupPage(req, res);
+
   const m = /(?:^|\/)r\/([^/]+?)(\/fire|\/state)?\/?$/.exec(url.pathname);
   if (!m) return notFound(res);
 

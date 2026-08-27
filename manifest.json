@@ -87,6 +87,11 @@
       "port": 4322,
       "path": "/admin",
       "protected": true
+    },
+    {
+      "port": 4321,
+      "path": "/setup",
+      "protected": false
     }
   ],
   "tasks": []

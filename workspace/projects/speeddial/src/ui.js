@@ -99,7 +99,8 @@ export const UI = `<!doctype html>
     </div>
     <p class="muted" style="margin:.6rem 0 0">
       A pad is a set of numbered buttons. Share a link to a pad and whoever opens it
-      can press those buttons and nothing else.
+      can press those buttons and nothing else. Click a pad's name to rename it —
+      that name is the heading your guests see.
     </p>
   </div>
 </main>
@@ -215,7 +216,7 @@ export const UI = `<!doctype html>
 
     var head = '<div class="row spread">' +
         '<div class="row">' +
-          '<h2>' + esc(pad.title || pad.name) + '</h2>' +
+          '<h2 class="f-title" title="Click to rename" style="cursor:text">' + esc(pad.title || pad.name) + '</h2>' +
           '<span class="pill">' + (pad.slots || []).length + ' button' + ((pad.slots || []).length === 1 ? '' : 's') + '</span>' +
           '<span class="pill">' + active.length + ' live link' + (active.length === 1 ? '' : 's') + '</span>' +
         '</div>' +
@@ -379,6 +380,38 @@ export const UI = `<!doctype html>
       : behaviour === 'toggle' ? 'toggle' : 'turn_on';
     return { on: { type: 'service', domain: domain, service: single, target: { entity_id: ent } }, off: null };
   }
+
+  // The title was display-only, so a pad created as "guest" was stuck being
+  // called "guest" on the page every visitor sees. Click it to rename.
+  app.addEventListener('click', function (ev) {
+    var h = ev.target.closest('.f-title');
+    if (!h || h.dataset.editing) return;
+    var card = h.closest('[data-pad]');
+    var padName = card.getAttribute('data-pad');
+    var current = h.textContent;
+    h.dataset.editing = '1';
+    h.innerHTML = '';
+    var input = document.createElement('input');
+    input.value = current;
+    input.maxLength = 60;
+    input.style.font = 'inherit';
+    h.appendChild(input);
+    input.focus();
+    input.select();
+    function done(save) {
+      var v = input.value.trim();
+      h.removeAttribute('data-editing');
+      if (!save || !v || v === current) { h.textContent = current; return; }
+      api('/pads', { method: 'POST', body: JSON.stringify({ name: padName, title: v }) })
+        .then(refresh).then(function () { toast('Renamed to "' + v + '".'); })
+        .catch(function (e) { toast(e.message, true); h.textContent = current; });
+    }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') done(true);
+      if (e.key === 'Escape') done(false);
+    });
+    input.addEventListener('blur', function () { done(true); });
+  });
 
   app.addEventListener('change', function (ev) {
     if (!ev.target.classList.contains('f-mode')) return;

@@ -19,6 +19,33 @@ pads share guest --ttl 7 --label "dog sitter"
 That last command prints the link **once**. Only a hash of it is stored, so it
 cannot be recovered — send it in that same reply or mint another.
 
+## When they'd rather click than type
+
+There is a config app, and it needs explaining rather than just linking, because
+the first visit is the awkward one.
+
+Send them to **`https://<agent-id>.agents.pinata.cloud/setup`** — a public page
+that walks them through it and builds the link. Say roughly this:
+
+> There's a web editor if you'd rather click. It's behind the same token that
+> protects the rest of the agent, so the first visit needs one paste: go to
+> /setup and it'll walk you through it. After that your browser remembers, and
+> the plain /admin address works on its own — worth bookmarking.
+
+Things worth saying, in your own words, when it comes up:
+
+- **The token is not a pad password.** It grants full access to the agent's
+  container. Tell them not to paste it into chat — including to you.
+- **It is a one-time step.** Following the link sets a cookie. People assume
+  they'll be assembling that URL forever, and won't bother.
+- **The GUI is optional.** Anything it does, you can do by being asked. Somebody
+  who never wants to see it loses nothing.
+- **They can rename a pad** by clicking its name in the editor. That name is the
+  heading guests see, so "guest" reads worse than "Guest room".
+
+If they say a link stopped working, the token was rotated: /setup again with the
+new one.
+
 ## Buttons
 
 ```bash

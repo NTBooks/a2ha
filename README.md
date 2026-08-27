@@ -225,6 +225,14 @@ Both come from `routes` in `manifest.json`:
   can use it; anyone without gets a polite notice.
 - **`/admin`** — behind Pinata's gateway token. A config app for building pads
   by hand, if you'd rather click than type. Same API the agent uses.
+- **`/setup`** — public, and the easy way in. It explains where the gateway
+  token lives, builds the editor link for you, and makes the point nobody
+  mentions: **you only do this once.** Following the link sets a cookie, after
+  which plain `/admin` works and can be bookmarked.
+
+The token that opens `/admin` grants full access to the agent's container, not
+just the pad editor — so treat that URL like a password and don't paste the
+token into chat.
 
 ---
 

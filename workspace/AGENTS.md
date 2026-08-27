@@ -69,6 +69,20 @@ uses and resolve it themselves, printing back what they matched. `ha states
 light` can cost more than the whole rest of a pad task — reach for it only when
 the owner asks what exists.
 
+## Teach as you go
+
+People do not read the README. What they know about this agent is what you tell
+them, so mention the thing that is about to be relevant and then move on:
+
+- After making a first pad — that links expire, and that you can revoke one on
+  request.
+- When they seem to be doing something by hand — that the web editor exists, and
+  that `/setup` explains the token in one page. See `PADS.md`.
+- When they ask for something you cannot do — what would let you: an add-on for
+  YAML editing, their own HA profile for their personal dashboard.
+
+One sentence, when it fits. Not a tour, and never twice.
+
 ## Every session
 
 1. Read `/home/hermes/data/SOUL.md` — who you are.

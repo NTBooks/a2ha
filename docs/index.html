@@ -14,6 +14,7 @@
     --line:    #d2dade;
     --line-hi: #bcc7cd;
     --accent:  #0d6b63;
+    --on-accent: #ffffff;
     --accent-soft: #e0efed;
     --lit:     #b8842c;
     --alarm:   #a03226;
@@ -32,6 +33,7 @@
       --line:    #232d32;
       --line-hi: #2f3b41;
       --accent:  #3fa89c;
+      --on-accent: #06100f;
       --accent-soft: #16302e;
       --lit:     #d9a441;
       --alarm:   #d97469;
@@ -49,6 +51,7 @@
     --line:    #232d32;
     --line-hi: #2f3b41;
     --accent:  #3fa89c;
+    --on-accent: #06100f;
     --accent-soft: #16302e;
     --lit:     #d9a441;
     --alarm:   #d97469;
@@ -239,12 +242,9 @@
   .btn {
     display: inline-block; padding: .7rem 1.3rem; border-radius: 3px;
     font-weight: 700; font-size: .92rem; letter-spacing: .01em; text-decoration: none;
-    border: 1px solid var(--accent); background: var(--accent); color: #fff;
-  }
-  :root[data-theme="dark"] .btn,
-  :root:not([data-theme="light"]) .btn { color: #06100f; }
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) .btn { color: #fff; }
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .btn.ghost { background: transparent; color: var(--accent); }
   .btn-row { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
@@ -390,7 +390,7 @@
         <b>There is an assistant, and it's optional.</b> It exists because
         building a dashboard by hand is an afternoon of dragging cards, and
         renaming forty entities that arrived from an integration as
-        <code>sensor.0x847127fffe_battery</code> is nobody's evening.
+        <code>sensor.0x00158d0004a1b2c3_battery</code> is nobody's evening.
       </p>
       <p>
         When you do talk to it, it asks Home Assistant first. Your own

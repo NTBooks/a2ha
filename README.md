@@ -11,6 +11,9 @@ you keep putting off.
 
 ---
 
+**[See the overview page →](https://ntbooks.github.io/a2ha/)** — a one-page
+explanation you can send to someone who hasn't read any of this.
+
 ## The problem it actually solves
 
 Someone is staying at your place for a week. They need the porch light, the

@@ -1,0 +1,505 @@
+<title>The Porch Light Problem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+  :root {
+    --ground:  #e9edef;
+    --panel:   #ffffff;
+    --plate:   #f4f6f7;
+    --ink:     #10161a;
+    --ink-mid: #4a5760;
+    --ink-dim: #78868f;
+    --line:    #d2dade;
+    --line-hi: #bcc7cd;
+    --accent:  #0d6b63;
+    --accent-soft: #e0efed;
+    --lit:     #b8842c;
+    --alarm:   #a03226;
+    --shadow:  0 1px 2px rgb(16 22 26 / .06), 0 8px 24px rgb(16 22 26 / .05);
+  }
+  :root:not([data-theme="light"]) { color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground:  #0c1113;
+      --panel:   #151c20;
+      --plate:   #11181b;
+      --ink:     #e6ecef;
+      --ink-mid: #9dabb3;
+      --ink-dim: #6e7c85;
+      --line:    #232d32;
+      --line-hi: #2f3b41;
+      --accent:  #3fa89c;
+      --accent-soft: #16302e;
+      --lit:     #d9a441;
+      --alarm:   #d97469;
+      --shadow:  0 1px 2px rgb(0 0 0 / .4), 0 8px 24px rgb(0 0 0 / .3);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground:  #0c1113;
+    --panel:   #151c20;
+    --plate:   #11181b;
+    --ink:     #e6ecef;
+    --ink-mid: #9dabb3;
+    --ink-dim: #6e7c85;
+    --line:    #232d32;
+    --line-hi: #2f3b41;
+    --accent:  #3fa89c;
+    --accent-soft: #16302e;
+    --lit:     #d9a441;
+    --alarm:   #d97469;
+    --shadow:  0 1px 2px rgb(0 0 0 / .4), 0 8px 24px rgb(0 0 0 / .3);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.5rem; }
+  .col  { max-width: 36rem; }
+
+  h1, h2, h3, .mono, .eyebrow, .key-num, .btn {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  }
+  .mono, .key-num, code, .spec dt {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 6vw, 4rem);
+    font-weight: 800;
+    letter-spacing: -.03em;
+    line-height: 1.02;
+    margin: 0 0 1.2rem;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: clamp(1.5rem, 3vw, 2.05rem);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.12;
+    margin: 0 0 .9rem;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -.005em;
+    margin: 0 0 .35rem;
+  }
+  p { margin: 0 0 1.1rem; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+  .eyebrow {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin: 0 0 .8rem;
+  }
+  .lede { font-size: 1.2rem; color: var(--ink-mid); }
+  .fine { font-size: .93rem; color: var(--ink-mid); }
+
+  /* ---- plates: the panel sections ---- */
+  section { padding: 4.5rem 0; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: 0; }
+  .plate {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+  }
+
+  /* ---- hero ---- */
+  .hero { padding: 5rem 0 4.5rem; }
+  .hero-grid { display: grid; gap: 3.5rem; align-items: start; }
+  @media (min-width: 62rem) {
+    .hero-grid { grid-template-columns: 1fr 20rem; gap: 4.5rem; }
+  }
+
+  /* ---- the intercom pad ---- */
+  .intercom {
+    background: var(--panel);
+    border: 1px solid var(--line-hi);
+    border-radius: 6px;
+    padding: 1.1rem 1.1rem 1.3rem;
+    box-shadow: var(--shadow);
+    position: sticky;
+    top: 2rem;
+  }
+  .intercom-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: .5rem; padding-bottom: .8rem; margin-bottom: .9rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .intercom-title { font-family: Archivo, sans-serif; font-weight: 700; font-size: .95rem; }
+  .intercom-meta { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); }
+  .keys { display: flex; flex-direction: column; gap: .5rem; }
+  .key {
+    display: flex; align-items: center; gap: .8rem; width: 100%;
+    padding: .8rem .85rem;
+    background: var(--plate);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: inherit; font: inherit; text-align: left; cursor: pointer;
+    position: relative; overflow: hidden;
+    transition: border-color .15s, transform .06s;
+  }
+  .key:hover { border-color: var(--line-hi); }
+  .key:active { transform: translateY(1px); }
+  .key:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .key-num {
+    flex: 0 0 1.7rem; height: 1.7rem; display: grid; place-items: center;
+    border: 1px solid var(--line-hi); border-radius: 2px;
+    font-size: .82rem; font-weight: 600; color: var(--ink-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .key-label { flex: 1; font-family: Archivo, sans-serif; font-size: .92rem; font-weight: 500; }
+  .lamp {
+    flex: 0 0 auto; width: .52rem; height: .52rem; border-radius: 50%;
+    background: var(--line-hi); transition: background .3s, box-shadow .3s;
+  }
+  .key[aria-pressed="true"] .lamp {
+    background: var(--lit);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--lit) 20%, transparent);
+  }
+  .key .wash {
+    position: absolute; inset: 0; background: var(--accent); opacity: .1;
+    transform: scaleX(0); transform-origin: left center; pointer-events: none;
+  }
+  .key.pressed .wash { animation: wash 1.4s ease-out forwards; }
+  @keyframes wash { to { transform: scaleX(1); } }
+  .intercom-foot {
+    margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--line);
+    font-size: .74rem; color: var(--ink-dim); line-height: 1.5;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .key.pressed .wash { animation: none; transform: scaleX(1); }
+  }
+
+  /* ---- the ledger: what a guest can and cannot reach ---- */
+  .ledger { border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--panel); }
+  .ledger-row {
+    display: grid; grid-template-columns: 1.6rem 1fr; gap: .85rem;
+    padding: .85rem 1.1rem; border-top: 1px solid var(--line);
+    align-items: baseline;
+  }
+  .ledger-row:first-child { border-top: 0; }
+  .mark { font-family: "JetBrains Mono", monospace; font-weight: 600; font-size: .95rem; }
+  .yes .mark { color: var(--accent); }
+  .no  .mark { color: var(--alarm); }
+  .ledger-row b { font-family: Archivo, sans-serif; font-weight: 600; }
+  .ledger-row span { display: block; font-size: .92rem; color: var(--ink-mid); }
+
+  /* ---- spec list ---- */
+  .spec { display: grid; gap: 0; margin: 0; }
+  .spec > div {
+    display: grid; grid-template-columns: 1fr; gap: .15rem;
+    padding: .9rem 0; border-top: 1px solid var(--line);
+  }
+  @media (min-width: 40rem) {
+    .spec > div { grid-template-columns: 13rem 1fr; gap: 1.5rem; align-items: baseline; }
+  }
+  .spec dt { font-size: .84rem; color: var(--ink); font-weight: 600; }
+  .spec dd { margin: 0; font-size: .95rem; color: var(--ink-mid); }
+
+  /* ---- callout ---- */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 1.2rem 1.4rem;
+    border-radius: 0 4px 4px 0;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ---- terminal ---- */
+  .term {
+    background: var(--plate); border: 1px solid var(--line); border-radius: 4px;
+    padding: 1rem 1.1rem; overflow-x: auto;
+    font-family: "JetBrains Mono", monospace; font-size: .82rem; line-height: 1.75;
+  }
+  .term .u { color: var(--ink-dim); }
+  .term .ha { color: var(--accent); font-weight: 600; }
+  .term .llm { color: var(--lit); font-weight: 600; }
+
+  /* ---- cta ---- */
+  .btn {
+    display: inline-block; padding: .7rem 1.3rem; border-radius: 3px;
+    font-weight: 700; font-size: .92rem; letter-spacing: .01em; text-decoration: none;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  }
+  :root[data-theme="dark"] .btn,
+  :root:not([data-theme="light"]) .btn { color: #06100f; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .btn { color: #fff; }
+  }
+  .btn.ghost { background: transparent; color: var(--accent); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
+
+  footer { padding: 3rem 0 4rem; border-top: 1px solid var(--line); color: var(--ink-dim); font-size: .88rem; }
+</style>
+
+<div class="wrap">
+
+  <!-- ============================== HERO -->
+  <section class="hero">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">Home Assistant · guest access</p>
+        <h1>Give someone the porch light. Not your house.</h1>
+        <p class="lede">
+          Your sister is staying a week. She needs three things: the porch light,
+          the guest room lamp, the coffee machine.
+        </p>
+        <p>
+          Today your options are to make her a Home Assistant account — which
+          shows her every camera, every lock and every sensor you own, and which
+          you have to remember to delete afterwards — or to hand over your phone,
+          or to leave a note on the counter and hope.
+        </p>
+        <p>
+          <b>A2HA gives you a third option: a link.</b> Three big buttons, no app,
+          no account, no login. It stops working on Sunday, or the moment you
+          revoke it.
+        </p>
+        <div class="btn-row" style="margin-top:1.8rem">
+          <a class="btn" href="https://github.com/NTBooks/a2ha">Get it on GitHub</a>
+          <a class="btn ghost" href="#no-ai">The AI question →</a>
+        </div>
+      </div>
+
+      <div class="intercom">
+        <div class="intercom-head">
+          <span class="intercom-title">Guest room</span>
+          <span class="intercom-meta">expires sun</span>
+        </div>
+        <div class="keys">
+          <button class="key" aria-pressed="false" data-lamp>
+            <span class="wash"></span><span class="key-num">1</span>
+            <span class="key-label">Porch light</span><span class="lamp"></span>
+          </button>
+          <button class="key" aria-pressed="true" data-lamp>
+            <span class="wash"></span><span class="key-num">2</span>
+            <span class="key-label">Guest room lamp</span><span class="lamp"></span>
+          </button>
+          <button class="key" aria-pressed="false" data-lamp>
+            <span class="wash"></span><span class="key-num">3</span>
+            <span class="key-label">Coffee machine</span><span class="lamp"></span>
+          </button>
+        </div>
+        <p class="intercom-foot">
+          This is the real thing — press one. On a guest's phone the lamp shows
+          what's actually on in the house, read live from Home Assistant.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== THE LEDGER -->
+  <section>
+    <div class="col">
+      <p class="eyebrow">The guarantee</p>
+      <h2>A guest only ever sends a number.</h2>
+      <p>
+        There is no text box on that page. There is nothing to type. Whatever
+        arrives is a digit between one and nine, and it selects from actions
+        <em>you</em> defined. That is the entire protocol, and it's why the rest
+        of this is possible to promise.
+      </p>
+    </div>
+
+    <div class="ledger" style="margin-top:2rem">
+      <div class="ledger-row no">
+        <span class="mark">✕</span>
+        <div><b>Entity IDs, service names, your other pads</b>
+          <span>None of it is in the page. There is nothing to enumerate and no list to walk.</span></div>
+      </div>
+      <div class="ledger-row no">
+        <span class="mark">✕</span>
+        <div><b>Anything you didn't put on that pad</b>
+          <span>One link reaches one pad. Not the next room, not the front door, not the cameras.</span></div>
+      </div>
+      <div class="ledger-row no">
+        <span class="mark">✕</span>
+        <div><b>The link, after you're done with it</b>
+          <span>Expiry and revocation are checked on every single tap, not at page load. Kill it mid-visit and it dies mid-visit.</span></div>
+      </div>
+      <div class="ledger-row yes">
+        <span class="mark">✓</span>
+        <div><b>Whether the light is actually on</b>
+          <span>Read live from Home Assistant when the page opens — so nobody presses a button to find out.</span></div>
+      </div>
+      <div class="ledger-row yes">
+        <span class="mark">✓</span>
+        <div><b>The buttons, and the labels you wrote</b>
+          <span>That's the whole payload.</span></div>
+      </div>
+    </div>
+
+    <div class="col" style="margin-top:2rem">
+      <p class="fine">
+        Some smaller decisions that matter more than they look: opening the page
+        fires nothing, because chat apps fetch links to build previews and
+        pasting one into a group chat shouldn't turn on your lights. Share links
+        are stored as a hash, so nobody — including the software — can recover
+        one afterwards. A dead link returns a plain notice rather than a 404, so
+        a forwarded link looks calm instead of alarming.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================== THE AI QUESTION -->
+  <section id="no-ai">
+    <div class="col">
+      <p class="eyebrow">Let's address it</p>
+      <h2>No model touches a button press.</h2>
+      <p>
+        You're on a Home Assistant forum. You've watched a hundred projects
+        bolt a chatbot onto something that worked fine. So here it is plainly:
+      </p>
+    </div>
+
+    <div class="col callout" style="margin-top:1.5rem">
+      <p>
+        <b>A guest pressing a button is:</b> token → look up which slot →
+        call Home Assistant. No inference, no API key, no network call to anyone
+        but your own house.
+      </p>
+      <p class="fine" style="margin-bottom:0">
+        Unplug the language model entirely and every pad keeps working. A
+        house-sitter would never know. It's also why button presses cost nothing
+        to run, no matter how many times someone taps.
+      </p>
+    </div>
+
+    <div class="col" style="margin-top:2rem">
+      <p>
+        <b>There is an assistant, and it's optional.</b> It exists because
+        building a dashboard by hand is an afternoon of dragging cards, and
+        renaming forty entities that arrived from an integration as
+        <code>sensor.0x847127fffe_battery</code> is nobody's evening.
+      </p>
+      <p>
+        When you do talk to it, it asks Home Assistant first. Your own
+        <b>Assist</b> pipeline parses "turn on the office lamp" locally and acts
+        on it — free, and faster than a model deliberating about it. Only what
+        Assist can't handle escalates. Every reply says which happened:
+      </p>
+    </div>
+
+    <div class="col term" style="margin-top:1.2rem">
+      <div><span class="u">you ›</span> is the office lamp on?</div>
+      <div><span class="ha">HA ›</span> No, it's off.</div>
+      <div style="height:.6rem"></div>
+      <div><span class="u">you ›</span> build a kitchen panel with the lights and the kettle</div>
+      <div><span class="llm">LLM ›</span> Done — four cards. Want it as the wall screen's home?</div>
+    </div>
+
+    <div class="col" style="margin-top:1.2rem">
+      <p class="fine">
+        The prefix isn't decoration. One of those cost nothing and one didn't,
+        and you can't tell from the words.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================== THE OTHER HALF -->
+  <section>
+    <div class="col">
+      <p class="eyebrow">The unglamorous half</p>
+      <h2>The jobs you keep putting off.</h2>
+      <p>
+        Everything here goes through Home Assistant's own APIs, so what it makes
+        shows up in the UI editor like anything you'd have built yourself. It is
+        not a parallel system and it doesn't hold your config hostage.
+      </p>
+    </div>
+
+    <dl class="spec col" style="margin-top:1.5rem">
+      <div><dt>Dashboards</dt><dd>Built from what's actually in the room. It checks which card types your install really renders — including custom ones from HACS — and refuses to invent ones that don't exist.</dd></div>
+      <div><dt>Automations</dt><dd>Written through the config API, editable afterwards in the UI like any other.</dd></div>
+      <div><dt>Tidying up</dt><dd>What's unavailable, what's duplicated, what hasn't reported in a month, what's named badly.</dd></div>
+      <div><dt>The small stuff</dt><dd>Helpers, a weather card, working out which automation fires at 3am.</dd></div>
+      <div><dt>Undo</dt><dd>Every destructive change is snapshotted first. Home Assistant keeps no history of its own, so this is the only rollback there is.</dd></div>
+    </dl>
+  </section>
+
+  <!-- ============================== WHERE IT RUNS -->
+  <section>
+    <div class="col">
+      <p class="eyebrow">Where it runs</p>
+      <h2>Home Assistant never needs a public URL.</h2>
+      <p>
+        The agent can join your tailnet and reach Home Assistant over WireGuard,
+        which means the only thing facing the internet is the guest pad — and
+        that only exposes buttons you chose. Your house stays where it is.
+      </p>
+      <p>
+        <b>You can also skip the agent entirely.</b> The pad server is a
+        zero-dependency Node app with two environment variables. Run it on the
+        same box as Home Assistant, behind whatever proxy you already have, and
+        you have the guest-access feature with no cloud, no key and no running
+        cost.
+      </p>
+    </div>
+
+    <dl class="spec col" style="margin-top:1.5rem">
+      <div><dt>Licence</dt><dd>MIT. Yours to fork.</dd></div>
+      <div><dt>Dependencies</dt><dd>None. Node's standard library, so <code>npm ci</code> pulls nothing and there's no build step to rot.</dd></div>
+      <div><dt>Hosting</dt><dd>Pinata's free tier, self-hosted <a href="https://github.com/NousResearch/hermes-agent">Hermes</a>, or no agent at all.</dd></div>
+      <div><dt>Model</dt><dd>Your choice, including one running on your own hardware. Or none.</dd></div>
+      <div><dt>Data</dt><dd>Pads and share tokens live in a folder you can back up. Nothing phones home.</dd></div>
+    </dl>
+  </section>
+
+  <!-- ============================== CLOSE -->
+  <section>
+    <div class="col">
+      <h2>It started as one feature that kept earning its keep.</h2>
+      <p>
+        The guest pad came out of <a href="https://fanad.org">Fanad</a>, where it
+        was the thing people actually used. This lifts it out on its own, and
+        adds the assistant for the configuration work — clearly separated, so you
+        can take one and leave the other.
+      </p>
+      <div class="btn-row" style="margin-top:1.6rem">
+        <a class="btn" href="https://github.com/NTBooks/a2ha">Read the source</a>
+        <a class="btn ghost" href="https://github.com/NTBooks/a2ha/blob/main/SELF-HOSTING.md">Self-hosting guide</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="col">
+      A2HA — Assistant <em>to the</em> Home Assistant. Not the Assistant Home
+      Assistant; that's a different and frankly less prestigious role.
+    </div>
+  </footer>
+</div>
+
+<script>
+  // The hero pad is the real interaction, not a picture of one: press a key and
+  // it washes and latches, exactly as a guest's phone behaves.
+  document.querySelectorAll(".key").forEach(function (key) {
+    key.addEventListener("click", function () {
+      if (key.classList.contains("pressed")) return;   // the wash is the cooldown
+      key.classList.add("pressed");
+      setTimeout(function () { key.classList.remove("pressed"); }, 1400);
+      var on = key.getAttribute("aria-pressed") === "true";
+      key.setAttribute("aria-pressed", on ? "false" : "true");
+    });
+  });
+</script>

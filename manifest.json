@@ -66,6 +66,11 @@
       "name": "HA_FILES_PASSWORD",
       "description": "Optional. Password you set in the File editor add-on options. Only used with HA_FILES_URL.",
       "required": false
+    },
+    {
+      "name": "ADMIN_TOKEN",
+      "description": "Optional, and NOT needed on Pinata - the gateway already protects the /admin route. Only for self-hosting: a shared secret required to reach the config API from anywhere other than localhost. Without it, the admin port refuses to bind to anything but loopback off-Pinata.",
+      "required": false
     }
   ],
   "scripts": {

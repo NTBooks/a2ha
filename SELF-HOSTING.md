@@ -1,8 +1,30 @@
 # Self-hosting A2HA without Pinata
 
-Pinata provides four things this template leans on: a container, secret
-injection, a public HTTPS gateway with per-route auth, and the chat channel
-plumbing. Replace those and everything here runs anywhere.
+> ## ⚠️ Read this before you expose anything
+>
+> **The admin API on port 4322 can read every pad, mint guest links, and fire
+> every device you have wired up. It is not a settings page — it is a remote
+> control for your house.**
+>
+> On Pinata, the gateway demands a token before anything reaches it. **Off
+> Pinata, there is no gateway.** A port-forward, a `docker run -p 4322:4322`, or
+> a reverse proxy rule copied from the wrong line, and it is an unauthenticated
+> remote control on the open internet.
+>
+> The code now defaults to safe, so you have to go out of your way to get this
+> wrong:
+>
+> - **Off Pinata, the admin port binds to `127.0.0.1` by default.** Not
+>   reachable from another machine at all.
+> - To expose it you must set `ADMIN_HOST` **and** it will warn loudly on every
+>   boot unless you also set `ADMIN_TOKEN`.
+> - With `ADMIN_TOKEN` set, non-loopback requests need it — as `?token=`, a
+>   `Bearer` header, or the cookie it sets on first use. Loopback stays exempt
+>   so the CLIs keep working.
+>
+> **Port 4321 is the opposite and that is fine.** Guest pads are meant to be
+> public; a link only reaches the buttons on one pad, expires, and can be
+> revoked. Publish 4321. Do not publish 4322.
 
 There are two modes, and most people want the first.
 
@@ -45,26 +67,20 @@ node ../../bin/pads.mjs share guest --ttl 7
 light"`, `ha automation put`, `ha dashboard-create`, and so on. All of it is
 plain HTTP to Home Assistant; none of it involves a model.
 
-### Port 4322 has no authentication of its own
+### Port 4322: see the warning at the top
 
-On Pinata, the gateway holds that door shut. Self-hosted, **nothing does.**
-Anyone who reaches 4322 can read every pad, mint links, and fire your devices.
-
-The right shape is to bind **both** ports to loopback and let a reverse proxy
-decide what the world sees:
+Short version: off Pinata it binds to loopback by default and you should leave
+it there. If you need it from another machine, set both:
 
 ```bash
-HOST=127.0.0.1 node src/index.js
+ADMIN_TOKEN=$(openssl rand -hex 24) ADMIN_HOST=0.0.0.0 node src/index.js
 ```
 
-`HOST` applies to both listeners, so nothing is reachable from outside the box.
-The proxy then publishes 4321 and either keeps 4322 to itself or puts auth in
-front of it. Verified: with `HOST=127.0.0.1` the servers bind `127.0.0.1` only.
+Then reach it at `https://your-host/admin?token=<that value>` — it sets a
+cookie on first use, so the token only appears in the URL once.
 
-If you skip the proxy entirely, bind loopback anyway and drive it over SSH with
-the CLI — you lose the config app but nothing else.
-
-Never publish 4322 the way you publish 4321.
+Better still, leave it on loopback and let a reverse proxy with its own auth be
+the only way in. Belt and braces: do both.
 
 ### A reverse proxy that gets this right
 

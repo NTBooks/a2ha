@@ -356,9 +356,13 @@ it's a zero-dependency Node app you can run behind any reverse proxy for
 nothing. The agent half runs on [Hermes](https://github.com/NousResearch/hermes-agent),
 which is open source.
 
-See [SELF-HOSTING.md](SELF-HOSTING.md). Read the note about port 4322 before you
-expose anything: on Pinata the gateway guards the config app, and self-hosted
-nothing does.
+See [SELF-HOSTING.md](SELF-HOSTING.md).
+
+> **⚠️ One thing to know up front.** The admin API on port 4322 can mint guest
+> links and fire your devices. Pinata's gateway guards it; self-hosted, nothing
+> does. Off Pinata it now binds to loopback by default and refuses to be exposed
+> quietly — set `ADMIN_TOKEN` if you need it reachable. Port 4321, the guest
+> pads, is meant to be public and is safe to publish.
 
 ## Credits
 

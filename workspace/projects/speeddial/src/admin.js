@@ -137,8 +137,42 @@ async function routeApi(req, res, url) {
   return notFound(res);
 }
 
+// Optional shared secret for self-hosted installs. On Pinata the gateway
+// authenticates this route and nothing here is reachable without its token;
+// self-hosted, there is no gateway, so this is the only lock available short of
+// a reverse proxy. Loopback is exempt: the CLIs talk over 127.0.0.1 and adding
+// a secret there would break them for no gain.
+const ADMIN_TOKEN = String(process.env.ADMIN_TOKEN ?? '').trim();
+
+const isLoopback = (req) => {
+  const a = req.socket?.remoteAddress ?? '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+};
+
+function authorised(req, url) {
+  if (!ADMIN_TOKEN) return true;
+  if (isLoopback(req)) return true;
+  if (url.searchParams.get('token') === ADMIN_TOKEN) return true;
+  const header = req.headers.authorization ?? '';
+  if (header === `Bearer ${ADMIN_TOKEN}`) return true;
+  const cookie = /(?:^|;\s*)a2ha_admin=([^;]+)/.exec(req.headers.cookie ?? '');
+  return cookie ? decodeURIComponent(cookie[1]) === ADMIN_TOKEN : false;
+}
+
 export async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost');
+
+  if (!authorised(req, url)) {
+    res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ error: 'Unauthorized.' }));
+  }
+
+  // Remember a valid token so the app's own requests carry it without every URL
+  // needing ?token=. Same-origin only, and never sent cross-site.
+  if (ADMIN_TOKEN && url.searchParams.get('token') === ADMIN_TOKEN) {
+    res.setHeader('Set-Cookie',
+      `a2ha_admin=${encodeURIComponent(ADMIN_TOKEN)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`);
+  }
 
   if (/(?:^|\/)api(?:\/|$)/.test(url.pathname)) {
     try {

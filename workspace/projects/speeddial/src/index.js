@@ -18,6 +18,23 @@ const GUEST_PORT = Number(process.env.GUEST_PORT || 4321);
 const ADMIN_PORT = Number(process.env.ADMIN_PORT || 4322);
 const HOST = process.env.HOST || '0.0.0.0';
 
+// The admin API can read every pad, mint share links and fire devices. On
+// Pinata the gateway stands in front of it and demands a token, so binding
+// broadly there is fine and necessary. Off Pinata there is no gateway, and a
+// broadly-bound admin port is an unauthenticated remote control for someone
+// else's house.
+//
+// So: default to loopback when nothing is protecting it. An operator who really
+// wants it exposed has to say so, and set a token.
+const ON_PINATA = !!String(process.env.AGENT_ID ?? '').trim();
+const ADMIN_TOKEN = String(process.env.ADMIN_TOKEN ?? '').trim();
+const ADMIN_HOST_ENV = String(process.env.ADMIN_HOST ?? '').trim();
+
+let ADMIN_HOST;
+if (ADMIN_HOST_ENV) ADMIN_HOST = ADMIN_HOST_ENV;
+else if (ON_PINATA || ADMIN_TOKEN) ADMIN_HOST = HOST;
+else ADMIN_HOST = '127.0.0.1';
+
 function guard(fn, label) {
   return async (req, res) => {
     try {
@@ -38,8 +55,21 @@ const adminServer = createServer(guard(admin, 'admin'));
 guestServer.listen(GUEST_PORT, HOST, () => {
   console.log(`[a2ha] guest pads on ${HOST}:${GUEST_PORT}`);
 });
-adminServer.listen(ADMIN_PORT, HOST, () => {
-  console.log(`[a2ha] config app on ${HOST}:${ADMIN_PORT}`);
+adminServer.listen(ADMIN_PORT, ADMIN_HOST, () => {
+  console.log(`[a2ha] config app on ${ADMIN_HOST}:${ADMIN_PORT}`);
+  if (ADMIN_HOST === '127.0.0.1' && !ON_PINATA) {
+    console.log('[a2ha] admin is loopback-only (nothing is authenticating it).');
+    console.log('[a2ha] To reach it from elsewhere: set ADMIN_TOKEN, or put a proxy');
+    console.log('[a2ha] in front and set ADMIN_HOST explicitly.');
+  }
+  if (ADMIN_HOST !== '127.0.0.1' && !ON_PINATA && !ADMIN_TOKEN) {
+    console.warn('');
+    console.warn('[a2ha] *** WARNING: the admin API is bound to a non-loopback address');
+    console.warn('[a2ha] *** with no ADMIN_TOKEN and no gateway in front of it.');
+    console.warn('[a2ha] *** Anyone who can reach it can mint guest links and fire');
+    console.warn('[a2ha] *** your devices. Set ADMIN_TOKEN, or bind it to 127.0.0.1.');
+    console.warn('');
+  }
 });
 
 console.log(`[a2ha] data dir ${DATA_DIR}`);

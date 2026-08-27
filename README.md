@@ -379,8 +379,9 @@ See [SELF-HOSTING.md](SELF-HOSTING.md).
 
 A2HA is not the first thing to point an LLM at Home Assistant, and it isn't the
 first to hand a guest a link. It's the first I know of to do both, from chat,
-from outside the house — but the other projects are good, several are more
-mature, and one of them is probably a better fit for you. Here's the honest map.
+from outside the house. The rest of the space is worth knowing about — the
+projects below overlap with this one in places, and each has drawn its scope
+somewhere different.
 
 | Project | Guest links | Dashboards | Automations & config | Runs | You drive it by |
 |---|:--:|:--:|:--:|---|---|
@@ -402,27 +403,28 @@ reading whichever tool you end up using. The OpenClaw and Hermes add-ons put the
 agent and a terminal inside HAOS and leave what it can do up to you — dashes in
 those columns mean "not out of the box", not "can't".
 
-**Go use something else if:**
+**Where the scopes differ**
 
-- **You only want guest links.** [HAPass](https://github.com/Rohithkadaveru/ha-pass)
-  is the more mature tool and gives guests more: live state over SSE, sliders and
-  thermostats rather than buttons, an installable PWA, QR codes, IP allowlisting.
-  It's an add-on, so it runs on your box and needs no agent, no model and no
-  monthly anything. A2HA's pads are deliberately poorer — buttons only, because
-  that constraint is the whole security argument — and the reason to prefer them
-  is that you can mint and kill one mid-conversation without opening a UI.
-- **You want an agent to build your whole setup and you already live in an IDE.**
-  [HA Vibecode Agent](https://github.com/Coolver/home-assistant-vibecode-agent)
-  is deeper than A2HA on config: themes, HACS installs, git-versioned deploys,
-  log analysis. It runs next to Home Assistant and talks to your editor.
-- **You want the chat inside Home Assistant itself.**
-  [AI Agent HA](https://github.com/sbenodiz/ai_agent_ha) is a HACS integration —
-  no tunnel, no second host, no token to mind.
+- [HAPass](https://github.com/Rohithkadaveru/ha-pass) is the fullest version of
+  the guest-link idea: live state over SSE, sliders and thermostats rather than
+  buttons, an installable PWA, QR codes, IP allowlisting — and no agent, model
+  or tunnel anywhere in it. A2HA's pads stop one notch short of that on purpose,
+  because buttons-only is what keeps the guest protocol a single integer. The
+  difference in practice is where a pad comes from: an admin UI there, a
+  sentence here.
+- [HA Vibecode Agent](https://github.com/Coolver/home-assistant-vibecode-agent)
+  goes further into the box than A2HA does — themes, HACS installs,
+  git-versioned deploys, log analysis — driven from an MCP-speaking IDE. A2HA
+  covers dashboards, automations, scripts, scenes and helpers, and stops there.
+- [AI Agent HA](https://github.com/sbenodiz/ai_agent_ha) keeps the whole thing
+  inside Home Assistant as a HACS integration: no tunnel, no second host,
+  nothing to reach in from. A2HA is outside by design, which costs you a setup
+  step and buys the next paragraph.
 
-**Come here if:** you want to text a house-sitter a link that dies on Sunday,
-and you'd rather Home Assistant never had a public URL at all. Everything above
-installs on the HA machine. A2HA doesn't — it joins your tailnet and reaches in,
-so the only thing on the internet is a page with three buttons on it.
+**What's only here:** minting and killing a guest link mid-conversation, and
+Home Assistant with no public URL at all. Everything above installs on the HA
+machine. A2HA joins your tailnet and reaches in, so the only thing facing the
+internet is a page with three buttons on it.
 
 ---
 

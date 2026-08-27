@@ -349,6 +349,17 @@ that path.
 
 ---
 
+## Running it without Pinata
+
+Both halves are self-hostable, and the guest-pad half needs no agent at all —
+it's a zero-dependency Node app you can run behind any reverse proxy for
+nothing. The agent half runs on [Hermes](https://github.com/NousResearch/hermes-agent),
+which is open source.
+
+See [SELF-HOSTING.md](SELF-HOSTING.md). Read the note about port 4322 before you
+expose anything: on Pinata the gateway guards the config app, and self-hosted
+nothing does.
+
 ## Credits
 
 The guest pad idea is lifted from the speed dial feature in

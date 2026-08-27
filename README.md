@@ -375,6 +375,57 @@ See [SELF-HOSTING.md](SELF-HOSTING.md).
 > quietly — set `ADMIN_TOKEN` if you need it reachable. Port 4321, the guest
 > pads, is meant to be public and is safe to publish.
 
+## Other projects in this space
+
+A2HA is not the first thing to point an LLM at Home Assistant, and it isn't the
+first to hand a guest a link. It's the first I know of to do both, from chat,
+from outside the house — but the other projects are good, several are more
+mature, and one of them is probably a better fit for you. Here's the honest map.
+
+| Project | Guest links | Dashboards | Automations & config | Runs | You drive it by |
+|---|:--:|:--:|:--:|---|---|
+| **A2HA** (this) | ✅ | ✅ | ✅ | Off your HA box — hosted, or your tailnet | Chat |
+| [HAPass](https://github.com/Rohithkadaveru/ha-pass) | ✅ | — | — | HA add-on or Docker | Admin web UI |
+| [HA Vibecode Agent](https://github.com/Coolver/home-assistant-vibecode-agent) | — | ✅ | ✅ plus themes, HACS, git history | HA add-on or Docker | An MCP-speaking IDE |
+| [AI Agent HA](https://github.com/sbenodiz/ai_agent_ha) | — | ✅ | ✅ | HACS integration, inside HA | Chat panel in HA |
+| [AItomation](https://github.com/gmatrangola/AItomation) | — | ✅ | ✅ with one-click apply | HA add-on | Its own web UI |
+| [hermes-homeassistant](https://github.com/gwyntel/hermes-homeassistant) | — | — | ✅ YAML over SSH | Your computer | Chat (Hermes skill) |
+| [OpenClaw](https://github.com/techartdev/OpenClawHomeAssistant) / [Hermes](https://github.com/WolframRavenwolf/hermes-ha-addon) add-ons | — | — | — | Inside HAOS | Chat |
+| [homeassistant-assist](https://github.com/developmentcats/homeassistant-assist), [ha-safe](https://github.com/rrockru/openclaw-home-assistant-safe) | — | — | — | OpenClaw skills | Chat |
+
+The bottom three rows aren't failing at anything — two of them are control
+skills and do that well, and the add-ons aren't skills at all. `homeassistant-assist`
+hands your sentence straight to Home Assistant's own NLU instead of making the
+model guess entity IDs, which is cheaper and more reliable than what most agents
+do. `ha-safe` is a careful least-privilege plugin with a security write-up worth
+reading whichever tool you end up using. The OpenClaw and Hermes add-ons put the
+agent and a terminal inside HAOS and leave what it can do up to you — dashes in
+those columns mean "not out of the box", not "can't".
+
+**Go use something else if:**
+
+- **You only want guest links.** [HAPass](https://github.com/Rohithkadaveru/ha-pass)
+  is the more mature tool and gives guests more: live state over SSE, sliders and
+  thermostats rather than buttons, an installable PWA, QR codes, IP allowlisting.
+  It's an add-on, so it runs on your box and needs no agent, no model and no
+  monthly anything. A2HA's pads are deliberately poorer — buttons only, because
+  that constraint is the whole security argument — and the reason to prefer them
+  is that you can mint and kill one mid-conversation without opening a UI.
+- **You want an agent to build your whole setup and you already live in an IDE.**
+  [HA Vibecode Agent](https://github.com/Coolver/home-assistant-vibecode-agent)
+  is deeper than A2HA on config: themes, HACS installs, git-versioned deploys,
+  log analysis. It runs next to Home Assistant and talks to your editor.
+- **You want the chat inside Home Assistant itself.**
+  [AI Agent HA](https://github.com/sbenodiz/ai_agent_ha) is a HACS integration —
+  no tunnel, no second host, no token to mind.
+
+**Come here if:** you want to text a house-sitter a link that dies on Sunday,
+and you'd rather Home Assistant never had a public URL at all. Everything above
+installs on the HA machine. A2HA doesn't — it joins your tailnet and reaches in,
+so the only thing on the internet is a page with three buttons on it.
+
+---
+
 ## Credits
 
 The guest pad idea is lifted from the speed dial feature in

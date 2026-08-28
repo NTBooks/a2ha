@@ -1,0 +1,9 @@
+{
+  // The overview page only — https://a2ha.pages.dev. Nothing about the agent
+  // itself is deployed from here; that contract lives in manifest.json.
+  //
+  //   npx wrangler pages deploy
+  //
+  "name": "a2ha",
+  "pages_build_output_dir": "docs"
+}

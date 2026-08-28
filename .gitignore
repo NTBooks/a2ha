@@ -10,3 +10,6 @@ Thumbs.db
 # Tailscale binaries (installed at build time) and the runtime proxy marker
 .tailscale/
 .tailscale-env
+
+# wrangler scratch state from `pages deploy`
+.wrangler/

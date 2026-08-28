@@ -11,7 +11,7 @@ you keep putting off.
 
 ---
 
-**[See the overview page →](https://ntbooks.github.io/a2ha/)** — a one-page
+**[See the overview page →](https://a2ha.pages.dev)** — a one-page
 explanation you can send to someone who hasn't read any of this.
 
 ## The problem it actually solves
@@ -241,12 +241,18 @@ token into chat.
 
 ## How it's built
 
-**No runtime dependencies.** The whole app is Node's standard library, so
-`npm ci` installs nothing and there's no build step to rot in two years.
+**One dependency, and only on the optional path.** The servers a guest or an
+owner actually touches are Node's standard library and nothing else — no build
+step to rot in two years. The agent's CLIs pull in a single package, `ssh2`, and
+only `ha file` — the opt-in YAML editing below — ever imports it. It's imported
+lazily, so a missing `node_modules` breaks that one command rather than the
+whole agent.
 
 ```
 manifest.json                deployment contract
+wrangler.jsonc               publishes docs/ to a2ha.pages.dev
 SOUL.md                      personality
+docs/index.html              the overview page
 workspace/
   setup.sh / start.sh        install Tailscale, join tailnet, serve
   AGENTS.md                  how the agent works
